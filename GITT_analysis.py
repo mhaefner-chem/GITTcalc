@@ -55,6 +55,63 @@ def fetch_GITT_data(file):
     return data
 
 '''
+Simple class to contain all settings
+'''
+class GITT_settings:
+    def __init__(self, file):
+        self.file_settings = file
+        self.file_data ='test.dat'
+        self.ion = 'Li'
+        self.Z = 1
+        self.m_AM = 1.118E-2    # g
+        self.M = 97.871         # g/mol
+        self.rho = 4.8          # g/cm³
+        self.I0 = 1.49E-4       # A
+        self.A_cont = 1.3273    # cm²
+        self.theo_max_cap = 250 # mAh/g, spec. capacity
+        self.c0_ion = 1         # starting stoichiometric Li/Na content of structure formula
+        self.scale = 1.5
+        self.limiter = 0.03
+            
+    
+    '''
+    Function to read settings for the system, measurement, and data analysis from file
+    '''
+    def fetch_GITT_settings(self):
+        with open(self.file_settings, mode='r') as f:
+            for line in f.readlines():
+                if line.split()[0] == 'Z':
+                    self.Z = int(line.split()[1])
+                elif line.split()[0] == 'file':
+                    self.file_data = line.split()[1]  
+                elif line.split()[0] == 'theo_max_cap':
+                    self.theo_max_cap = float(line.split()[1])
+                elif line.split()[0] == 'm_AM':
+                    self.m_AM = float(line.split()[1])
+                elif line.split()[0] == 'M':
+                    self.M = float(line.split()[1])
+                elif line.split()[0] == 'rho':
+                    self.rho = float(line.split()[1])
+                elif line.split()[0] == 'I0':
+                    self.I0 = float(line.split()[1])
+                elif line.split()[0] == 'A_cont':
+                    self.A_cont = float(line.split()[1])
+                elif line.split()[0] == 'c0_ion':
+                    self.c0_ion = float(line.split()[1])
+                elif line.split()[0] == 'scale':
+                    self.scale = float(line.split()[1])
+                elif line.split()[0] == 'limiter':
+                    self.limiter = float(line.split()[1])
+                elif line.split()[0] == 'ion':
+                    self.ion = line.split()[1]
+        return
+    
+    
+
+
+
+
+'''
 function produces a numerical derivative of a given pair of x and y-values
 slope at x determined with formula f(x+delta)-f(x-delta)/(2*delta)
 '''
@@ -82,56 +139,18 @@ if __name__ == '__main__':
     has_cap = False
     has_specap = False
     
-    scale = 1.5
-    limiter = 0.03
-    
     # necessary values and constants for calculation for D and x_ion
     F = 96485.3321 # C/mol
-    
-    # LNO as default
-    ion = 'Li'
-    Z = 1
-    m_AM = 1.118E-2 # g
-    M = 97.871 # g/mol
-    rho = 4.8 # g/cm³
-    I0 = 1.49E-4 # A
-    A_cont = 1.3273 # cm²
-    theo_max_cap = 274.51 # mAh/g, spec. capacity
-    c0_ion = 1 # starting stoichiometric Li/Na content of structure formula
     
     
     # retrieve data from given settings file
     # filename = 'settings_MFX_Arbin-P3.dat'
-    filename = 'settings_LNTO_AGR.dat'
-    # filename = 'settings_MFX.dat'
-    with open(filename, mode='r') as f:
-        for line in f.readlines():
-            if line.split()[0] == 'Z':
-                Z = int(line.split()[1])
-            elif line.split()[0] == 'file':
-                filename = line.split()[1]  
-            elif line.split()[0] == 'theo_max_cap':
-                theo_max_cap = float(line.split()[1])
-            elif line.split()[0] == 'm_AM':
-                m_AM = float(line.split()[1])
-            elif line.split()[0] == 'M':
-                M = float(line.split()[1])
-            elif line.split()[0] == 'rho':
-                rho = float(line.split()[1])
-            elif line.split()[0] == 'I0':
-                I0 = float(line.split()[1])
-            elif line.split()[0] == 'A_cont':
-                A_cont = float(line.split()[1])
-            elif line.split()[0] == 'c0_ion':
-                c0_ion = float(line.split()[1])
-            elif line.split()[0] == 'scale':
-                scale = float(line.split()[1])
-            elif line.split()[0] == 'limiter':
-                limiter = float(line.split()[1])
-            elif line.split()[0] == 'ion':
-                ion = line.split()[1]
+    # filename = '../settings_LNTO_AGR.dat'
+    filename = '../settings_MFX.dat'
+    settings = GITT_settings(filename)
+    settings.fetch_GITT_settings()
                                             
-    GITT_data = fetch_GITT_data(filename)
+    GITT_data = fetch_GITT_data(settings.file_data)
     
     x = GITT_data['time']['values']
     y = GITT_data['Ewe']['values']
@@ -146,7 +165,7 @@ if __name__ == '__main__':
     elif 'spec. cap.' in GITT_data:
         x_spec_cap = GITT_data['spec. cap.']['values']
         for value in x_spec_cap:
-            x_ion.append(-value/theo_max_cap + c0_ion)
+            x_ion.append(-value/settings.theo_max_cap + settings.c0_ion)
             y_cycle.append(0)
         has_specap = True
     else:
@@ -175,12 +194,12 @@ if __name__ == '__main__':
             
         
             if charge == True:
-                spec_cap = (ref_cap+cap)/m_AM
+                spec_cap = (ref_cap+cap)/settings.m_AM
             else:
-                spec_cap = (ref_cap-cap)/m_AM
+                spec_cap = (ref_cap-cap)/settings.m_AM
             
             x_spec_cap.append(spec_cap)
-            x_ion.append(-spec_cap/theo_max_cap + c0_ion)
+            x_ion.append(-spec_cap/settings.theo_max_cap + settings.c0_ion)
     
     
     
@@ -194,12 +213,12 @@ if __name__ == '__main__':
     # determine the sensitivity of detecting the derivative jumps
     
     # scales the check to the mean of the absolute values of the derivative
-    y_deriv_cutoff = limiter*np.mean(list(map(abs, y_deriv)))
+    y_deriv_cutoff = settings.limiter*np.mean(list(map(abs, y_deriv)))
 
     load = False  
     for i, value in enumerate(y_deriv):
         # detects positive derivative jump
-        if y_deriv[i] > abs(scale*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
+        if y_deriv[i] > abs(settings.scale*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
             # switches meaning of jump depending of whether the cell is currently being charged or discharged
             if len(current_on) == 0 or y[current_on[-1]] < y[i]:
                 current_on.append(i)
@@ -209,7 +228,7 @@ if __name__ == '__main__':
                off_times.append(x[i])
             load = True
         # detects negative derivative jump, same logic as for positive derivative jump but flipped
-        elif y_deriv[i] < -abs(scale*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
+        elif y_deriv[i] < -abs(settings.scale*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
             if len(current_on) == 0 or y[current_on[-1]] < y[i]:
                 current_off.append(i)
                 off_times.append(x[i])
@@ -271,20 +290,20 @@ if __name__ == '__main__':
         D_voltage.append(y[current_on[i]])
         
 
-    V_mol = M/rho
+    V_mol = settings.M/settings.rho
     print(V_mol)
     
     D = []
 
     for result in GITT_results:
-        D.append(4/(np.pi*result[4]) * (m_AM * V_mol/(M*A_cont))**2 * ((result[3]-result[0])/(result[2]-result[1]))**2)
+        D.append(4/(np.pi*result[4]) * (settings.m_AM * V_mol/(settings.M*settings.A_cont))**2 * ((result[3]-result[0])/(result[2]-result[1]))**2)
 
         # print(result,D)
         # print(result[4])
         
     with open('output.csv',mode='w') as f:
         if has_cap or has_specap:
-            f.write('{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','Ewe/V','x_{}'.format(ion),'SpecCap/mAh/g','D/cm^2/s','Cycle'))
+            f.write('{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','Ewe/V','x_{}'.format(settings.ion),'SpecCap/mAh/g','D/cm^2/s','Cycle'))
             for i,value in enumerate(D):
                 f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(D_x[i],D_voltage[i],D_Li[i],D_spec_cap[i],D[i],D_cycle[i]))
         else:
@@ -292,6 +311,8 @@ if __name__ == '__main__':
             for i,value in enumerate(D):
                 f.write('{:16.10e},{:16.10e},{:16.10e}\n'.format(D_x[i],D_voltage[i],D[i]))
     
+    
+    # everything after here is only for plotting the results
     plot = True
     if plot == True:
         import matplotlib.pyplot as plt
@@ -306,7 +327,7 @@ if __name__ == '__main__':
             for result in GITT_results:
                 tmp[0].append(result[i+5])
                 tmp[1].append(result[i])
-            # ax.scatter(tmp[0],tmp[1],marker="x",color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
+            ax.scatter(tmp[0],tmp[1],marker="x",color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
         
         ax.plot(x,y,linestyle='-',label='E')
         plt.xticks(fontsize=fs)
@@ -329,8 +350,8 @@ if __name__ == '__main__':
         h2, l2 = ax2.get_legend_handles_labels()
         ax2.legend(h1+h2, l1+l2,loc=1,fontsize=fs)
         
-        ax.set_xlim(0,1400000)
-        # ax.set_ylim(3.1,3.3)
+        # ax.set_xlim(610000,640000)
+        # ax.set_ylim(4.17,4.32)
         ax2.set_yscale('log')
         # ax2.set_ylim(-0.001,0.001)
         ax2.set_ylim(0,1.5E-9)
@@ -345,7 +366,7 @@ if __name__ == '__main__':
         
         plt.show()
         # fig.savefig("GITT.png", format='png',bbox_inches="tight",dpi=300)
-        
+
         if has_cap or has_specap:
             fig, ax = plt.subplots()
     
