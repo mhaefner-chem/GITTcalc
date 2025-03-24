@@ -154,6 +154,10 @@ def write_GITT_data(savefile,data_out,settings):
                 
     return
 
+def write_GITT_2_origin(data_raw,data_out,settings):
+    
+    return
+
 
 '''
 function produces a numerical derivative of a given pair of x and y-values
@@ -345,8 +349,7 @@ def process_GITT(GITT_data,settings):
     settings['cap'] = False
 
     if 'spec_cap' in GITT_data:
-        print(123123)
-        x_spec_cap = GITT_data['spec_cap']
+        raw_spec_cap = GITT_data['spec_cap']
         settings['spec_cap'] = True
     elif 'cap' in GITT_data:
         x_cap = GITT_data['cap']
@@ -356,13 +359,14 @@ def process_GITT(GITT_data,settings):
     charge = True
     current_cycle = 0 # charge-discharge cycle number
     ref_cap = 0
+    max_cap = 0
     x_ion = []
-    y_cycle = []
+    x_spec_cap = []
+    y_cycle = []    
     # this logic only works with Biologic output!!!
     # i.e., capacity is reset to 0 for every new charge or discharge cycle
     # capacity only ever rises and never decreases
     if settings['cap']:
-        x_spec_cap = []
         for i, cap in enumerate(x_cap):    
             y_cycle.append(current_cycle)
             if i > 1 and x_cap[i]-x_cap[i-1] < 0:
@@ -380,20 +384,51 @@ def process_GITT(GITT_data,settings):
             x_spec_cap.append(spec_cap)
             x_ion.append(-spec_cap/theocap + c0)
             
-    # this logic works with capacity that rises during charge and decreases during discharge
-    # i.e., capacity goes up for charge and down for discharges
     elif settings['spec_cap']:
         charge = True
-        for i, spec_cap in enumerate(x_spec_cap):
-            x_ion.append(-spec_cap/theocap + c0)
+
+        for i in range(len(raw_spec_cap)):
+
             y_cycle.append(current_cycle)
             if i > 1:
-                if x_spec_cap[i]-x_spec_cap[i-1] < 0 and charge == True:
+                if raw_spec_cap[i] > max_cap:
+                    max_cap = raw_spec_cap[i]
+                # print(i,x_spec_cap[i])
+                    
+                if raw_spec_cap[i] > 1E-4 and raw_spec_cap[i] < 1E-4*max_cap:
                     current_cycle += 1
-                    charge = False
-                elif x_spec_cap[i]-x_spec_cap[i-1] > 0 and charge == False:
-                    current_cycle += 1
-                    charge = True
+                    if charge:
+                        charge = False
+                        ref_cap = ref_cap+max_cap  
+                    else:
+                        charge = True
+                        ref_cap = ref_cap-max_cap
+                    max_cap = 0
+                    
+                if charge == True:
+                    spec_cap = (ref_cap+raw_spec_cap[i])
+                else:
+                    print(ref_cap,raw_spec_cap[i])
+                    spec_cap = (ref_cap-raw_spec_cap[i])
+                    
+                x_spec_cap.append(spec_cap)
+                x_ion.append(-spec_cap/theocap + c0)
+
+            
+    # this logic works with capacity that rises during charge and decreases during discharge
+    # i.e., capacity goes up for charge and down for discharges
+    # elif settings['spec_cap']:
+    #     charge = True
+    #     for i, spec_cap in enumerate(x_spec_cap):
+    #         x_ion.append(-spec_cap/theocap + c0)
+    #         y_cycle.append(current_cycle)
+    #         if i > 1:
+    #             if x_spec_cap[i]-x_spec_cap[i-1] < 0 and charge == True:
+    #                 current_cycle += 1
+    #                 charge = False
+    #             elif x_spec_cap[i]-x_spec_cap[i-1] > 0 and charge == False:
+    #                 current_cycle += 1
+    #                 charge = True
     
     # get numerical derivative of voltage
     # cutoff determines minimum jump in derivative required for it to be counted
@@ -522,7 +557,7 @@ class labeled_entry:
          self.entry = ttk.Entry(
              self._frame,
              textvariable=self.value,
-             width=8,
+             width=12,
              justify='right'
              #font=tk.font.Font(size=fs),
          )
@@ -555,6 +590,7 @@ class main_window:
         
         self.root = create_window("400x560+120+120","GITT Analysis")
         self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
         self.frame_buttons()
         self.frame_entry_fields()
         
@@ -646,7 +682,6 @@ class main_window:
             init_value = 0.01,
             fs = self.fs_norm)
         
-        
         # print(self.entry_distance.entry.get())
         
     # frame holding the buttons
@@ -660,10 +695,10 @@ class main_window:
             self.frame_top_buttons.columnconfigure(2, weight=1)
             
             sep_top = ttk.Separator(self.frame_top_buttons,orient='horizontal')
-            sep_top.grid(row=0,column=0,columnspan=3,sticky='EW')
+            sep_top.grid(row=0,column=0,columnspan=4,sticky='EW')
             
             sep_top2 = ttk.Separator(self.frame_top_buttons,orient='horizontal')
-            sep_top2.grid(row=3,column=0,columnspan=3,sticky='EW')
+            sep_top2.grid(row=3,column=0,columnspan=4,sticky='EW')
             
             self._button_get_GITT_raw = ttk.Button(self.frame_top_buttons, text = 'Open File', command = lambda : get_GITT_raw())
             self._button_get_GITT_raw.grid(row=1,column=0,sticky='NS')
@@ -674,12 +709,15 @@ class main_window:
             self._button_save_GITT = ttk.Button(self.frame_top_buttons, text = 'Save File', command = lambda : save_GITT())
             self._button_save_GITT.grid(row=1,column=2,sticky='NS')
             
+            self.button_export_2_Ori = ttk.Button(self.frame_top_buttons, text = 'Export to Origin', command = lambda : export_2_Origin())
+            self.button_export_2_Ori.grid(row=1,column=3,sticky='NS')
+            
             self.label_GITT_file = tk.Text(self.frame_top_buttons,
                                           # font = tk.font.Font(size=self.fs_note),
                                           height=2
                                           )
             self.label_GITT_file.insert(tk.END,self.raw_filename)
-            self.label_GITT_file.grid(row=2,column=0,columnspan=3,pady=10)
+            self.label_GITT_file.grid(row=2,column=0,columnspan=4,pady=10)
         
         def bottom_buttons(self):
         
@@ -692,11 +730,27 @@ class main_window:
             sep_bottom.grid(row=1,column=0,columnspan=2,sticky='EW')
     
             self._button_help = ttk.Button(self.frame_bottom_buttons, text = 'Help', command = lambda : getting_help())
-            self._button_help.grid(row=2,column=0)
+            self._button_help.grid(row=2,column=0,sticky='S')
             
             self._button_about = ttk.Button(self.frame_bottom_buttons, text = 'About', command = lambda : about())
-            self._button_about.grid(row=2,column=1)
+            self._button_about.grid(row=2,column=1,sticky='S')
             
+        
+        def fetch_GITT_settings():
+            
+            number_settings = ['theocap','m_AM','M_AM','rho','c0','A','scale','limiter']
+            settings_file = self.raw_file.split('.')[0]+'.info'
+            if os.path.isfile(settings_file):
+                with open(settings_file, mode='r') as f:
+                    for line in f.readlines():
+                        for item in number_settings:
+                            if line.split()[0] == item:
+                                self.settings[item].entry.delete(0,tk.END)
+                                self.settings[item].entry.insert(0, float(line.split()[1]))
+                        if line.split()[0] == 'ion':
+                            self.settings['ion'].entry.insert(0, line.split()[1])
+
+        
         def get_GITT_raw():
             filetypes = (
                 ('data files', '*.csv;*.txt;*.dat'),
@@ -712,6 +766,7 @@ class main_window:
                 self.raw_filename = 'GITT raw data loaded: '+self.raw_file
                 self.frame_top_buttons.destroy()
                 top_buttons(self)
+                fetch_GITT_settings()
             else:
                 messagebox.showerror("Error in input file!", "Input file could not be found!")
             return
@@ -722,6 +777,17 @@ class main_window:
             else:
                 self.D_data = process_GITT(self.GITT_data,self.settings)
         
+        def write_GITT_settings():
+            
+            number_settings = ['theocap','m_AM','M_AM','rho','c0','A','scale','limiter']
+            settings_file = self.raw_file.split('.')[0]+'.info'
+            with open(settings_file, mode='w') as f:
+                for item in number_settings:                      
+                    value = self.settings[item].entry.get()
+                    f.write('{} {}\n'.format(item,value))
+                value = self.settings['ion'].entry.get()
+                f.write('{} {}\n'.format('ion',value))
+        
         def save_GITT():
             if self.GITT_data == 0:
                 messagebox.showerror("No GITT data", "No GITT data loaded!")
@@ -730,6 +796,21 @@ class main_window:
                     ('All Files', '*.*')]
                 savefile = fd.asksaveasfile(filetypes = Files, defaultextension = Files)
                 write_GITT_data(savefile,self.D_data,self.settings)
+                write_GITT_settings()
+           
+        '''
+        TODO implement export into OriginLab
+        '''
+        def export_2_Origin():
+            print("Implementation pending...")
+            try:
+                import originlab
+                if self.GITT_data == 0:
+                    messagebox.showerror("No GITT data", "No GITT data loaded!")
+                else:
+                    write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
+            except:
+                print("originlab package missing!")
         
         def getting_help():
             print('Help')
