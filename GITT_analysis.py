@@ -5,45 +5,71 @@ Created on Sat Feb  8 15:51:35 2025
 @author: mhaefner-chem
 '''
 
+# INPUT
+
 '''
-this function saves the raw and processed GITT data into a OriginLab workbook,
-carrying over the name of the original file as label
+function reads in the GITT data from a given file
+Format: 
+    dictionary 'data', keys from list ['time','volt','cap','spec_cap']
+    time (continuous measurement time) and volt (measured voltage) are required
+    either cap (capacity) or spec_cap (special capacity) are requied
+    
+    datapoints are stored in lists:
+    data[key] = []
 '''
-def write_GITT_2_origin(data_raw,data_out,settings):
-    import originpro as op
-    book = op.new_book(lname=settings['name'])
+def get_GITT_data(file):
     
-    # worksheet for raw data
-    wks_raw = book.add_sheet(name='raw_data')
-    wks_raw.cols = 3
+    data = {}    
+    labels = []    
+    splitter = ' '
     
-    wks_raw.from_list(0,data_raw['time'],lname='Time',units='s')
-    wks_raw.from_list(1,data_raw['volt'],lname='Voltage',units='V')
-    if settings['cap']:
-        wks_raw.from_list(2,data_raw['cap'],lname='Capacity',units='mAh')
-    elif settings['spec_cap']:
-        wks_raw.from_list(2,data_raw['spec_cap'],lname='Specific Capacity',units='mAh/g')
-    
-    # worksheet for processed data
-    wks_diff = book.add_sheet(name='diffusion_data')
-    if settings['cap'] or settings['spec_cap']:
-        wks_diff.cols = 6
-    else:
-        wks_diff.cols = 3
-        
-    wks_diff.from_list(0,data_out['time'],lname='Time',units='s')
-    wks_diff.from_list(1,data_out['volt'],lname='Voltage',units='V')
-    wks_diff.from_list(2,data_out['diff'],lname='Diffusion Coefficient',units='cm²/s')
-    if settings['cap'] or settings['spec_cap']:
-        wks_diff.from_list(3,data_out['spec_cap'],lname='Specific Capacity',units='mAh/g')
-        wks_diff.from_list(4,data_out['ion'],lname='Content Conducting Ion',units='')
-        
-        half_cycle_label = []
-        for value in data_out['cycle']:
-            half_cycle_label.append(value + 1)
-        
-        wks_diff.from_list(5,half_cycle_label,lname='Half Cycle',units='',
-                           comments='odd cycles: charge, even cycles: discharge')
+    with open(file,mode='r') as f:
+        lines = f.readlines()
+        if ',' in lines[0]:
+            splitter = ','
+        elif '\t' in lines[0]:
+            splitter = '\t'
+        else:
+            splitter = ' '
+            
+        required = ['time','volt','cap','spec_cap']
+            
+        for line_index, line in enumerate(lines):
+            if line_index == 0:
+                for item in line.split(splitter):
+                    item = item.split('\n')[0]
+                    label = item
+                    if item in ['Test Time (s)','time/s','Time (s)']:
+                        label = 'time'
+                    elif item in ['Voltage (V)','Ewe/V']:
+                        label = 'volt'
+                    elif item in ['Capacity (mAh)','Capacity/mA.h','Capacity/mAh']:
+                        label = 'cap'
+                    elif item in ['Specific Capacity (mAh/g)','SpecificCapacity/mA.h/g']:
+                        label = 'spec_cap'
+                        
+                    data[label] = []
+                    labels.append(label)
+            else:
+                for item_index, item in enumerate(line.split(splitter)):
+                    if labels[item_index] in required:
+                        try:
+                            float(item)
+                        except:
+                            messagebox.showerror('Faulty GITT data', 'GITT data contains non-numerical values. Please check the input file.')
+                            return 0
+                        else:
+                            data[labels[item_index]].append(float(item))
+                                
+                    
+    for label in ['time','volt']:
+        if not label in data.keys():
+            messagebox.showerror('GITT data incomplete', 'The GITT data needs to contain at least a column labeled \'time/s\' and a column labeled \'Ewe/V\'.')
+            return 0
+
+    return data
+
+# OUTPUT
 
 '''
 This function writes the GITT settings to an .info-file in plain text format associated to the 
@@ -57,11 +83,11 @@ def write_GITT_settings(settings_file, settings):
         for item in number_settings:                      
             value = settings[item].entry.get()
             f.write('{} {}\n'.format(item,value))
-
+            
 '''
 This function writes an example file with mock GITT data.
 '''
-def write_example_GITT():
+def write_GITT_example():
     import numpy as np
     
     volt_init = 2
@@ -119,64 +145,47 @@ def write_example_GITT():
             fw.write('{:.8E}\t{:.8E}\t{:.8E}\n'.format(t,volt_all[i],cap_all[i]))
 
 '''
-function reads in the GITT data from a given file
-INFO: this needs to be linked to OriginLab
-Format: 
-    dictionary 'data', keys from list ['time','volt','cap','spec_cap']
-    time (continuous measurement time) and volt (measured voltage) are required
-    either cap (capacity) or spec_cap (special capacity) are requied
-    
-    datapoints are stored in lists:
-    data[key] = []
+this function saves the raw and processed GITT data into a OriginLab workbook,
+carrying over the name of the original file as label
 '''
-def fetch_GITT_data(file):
+def write_GITT_2_origin(data_raw,data_out,settings):
+    import originpro as op
+    book = op.new_book(lname=settings['name'])
     
-    data = {}    
-    labels = []    
-    splitter = ' '
+    # worksheet for raw data
+    wks_raw = book.add_sheet(name='raw_data')
+    wks_raw.cols = 3
     
-    with open(file,mode='r') as f:
-        lines = f.readlines()
-        if ',' in lines[0]:
-            splitter = ','
-        elif '\t' in lines[0]:
-            splitter = '\t'
-        else:
-            splitter = ' '
-            
-        required = ['time','volt','cap','spec_cap']
-            
-        for line_index, line in enumerate(lines):
-            if line_index == 0:
-                for item in line.split(splitter):
-                    item = item.split('\n')[0]
-                    label = item
-                    if item in ['Test Time (s)','time/s','Time (s)']:
-                        label = 'time'
-                    elif item in ['Voltage (V)','Ewe/V']:
-                        label = 'volt'
-                    elif item in ['Capacity (mAh)','Capacity/mA.h','Capacity/mAh']:
-                        label = 'cap'
-                    elif item in ['Specific Capacity (mAh/g)','SpecificCapacity/mA.h/g']:
-                        label = 'spec_cap'
-                        
-                    data[label] = []
-                    labels.append(label)
-            else:
-                for item_index, item in enumerate(line.split(splitter)):
-                    if labels[item_index] in required:
-                        data[labels[item_index]].append(float(item))
-                    
-    for label in ['time','volt']:
-        if not label in data.keys():
-            messagebox.showerror('GITT data incomplete', 'GITT data incomplete!')
-            return 0
+    wks_raw.from_list(0,data_raw['time'],lname='Time',units='s')
+    wks_raw.from_list(1,data_raw['volt'],lname='Voltage',units='V')
+    if settings['cap']:
+        wks_raw.from_list(2,data_raw['cap'],lname='Capacity',units='mAh')
+    elif settings['spec_cap']:
+        wks_raw.from_list(2,data_raw['spec_cap'],lname='Specific Capacity',units='mAh/g')
+    
+    # worksheet for processed data
+    wks_diff = book.add_sheet(name='diffusion_data')
+    if settings['cap'] or settings['spec_cap']:
+        wks_diff.cols = 6
+    else:
+        wks_diff.cols = 3
+        
+    wks_diff.from_list(0,data_out['time'],lname='Time',units='s')
+    wks_diff.from_list(1,data_out['volt'],lname='Voltage',units='V')
+    wks_diff.from_list(2,data_out['diff'],lname='Diffusion Coefficient',units='cm²/s')
+    if settings['cap'] or settings['spec_cap']:
+        wks_diff.from_list(3,data_out['spec_cap'],lname='Specific Capacity',units='mAh/g')
+        wks_diff.from_list(4,data_out['ion'],lname='Content Conducting Ion',units='')
+        
+        half_cycle_label = []
+        for value in data_out['cycle']:
+            half_cycle_label.append(value + 1)
+        
+        wks_diff.from_list(5,half_cycle_label,lname='Half Cycle',units='',
+                           comments='odd cycles: charge, even cycles: discharge')
 
-    return data
-    
 '''
 function outputs diffusion data
-INFO: this needs to be linked to OriginLab
 Format: 
     dictionary 'data_out', keys from list ['time','volt','spec_cap','cycle','diff']
     'time' is measurement time and 'volt' is measured voltage associated with diffusion rate 'diff'
@@ -200,6 +209,8 @@ def write_GITT_data(savefile,data_out,settings):
             for i,value in enumerate(data_out['diff']):
                 f.write('{:16.10e},{:16.10e},{:16.10e}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['diff'][i]))
 
+
+# METHODS
 '''
 function produces a numerical derivative of a given pair of x and y-values
 slope at x determined with formula f(x+delta)-f(x-delta)/(2*delta)
@@ -220,141 +231,6 @@ def get_numerical_derivative(x,y):
     return derivative
 
 '''
-function for plotting results from analyzed GITT data
-messy code, refactoring not yet planned
-'''
-class plot_window:
-    # initializes the window and default plotting data
-    def __init__(self,GITT_data,GITT_refined,D_out,settings):
-        
-        self.root = create_window("1000x700+120+120", "Atomic Form Factor Plot")
-    
-        self.data = GITT_data
-        self.refined = GITT_refined
-        self.D = D_out
-        self.settings = settings
-        self.dpi_default = 100
-        self.dpi_set = str(self.dpi_default)
-        self.draw_window()
-        
-    # populates the window with widgets
-    def draw_window(self):
-        self.plot_form_factors()
-    
-    # creates the plot with matplotlib
-    def plot_form_factors(self): 
-        
-        import matplotlib.pyplot as plt
-        # import matplotlib as mpl
-        from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
-        NavigationToolbar2Tk)
-        
-        fs = 16
-        DV_t = True
-        # D_x = False
-        
-        if DV_t:
-            fig, ax = plt.subplots()
-            colors = ["green","blue","red"]
-            alphas = [1.0,1.0,1.0]
-            labels = ['E1','E2','E3']
-            for i in range(3):
-                tmp = [[],[]]
-                for result in self.refined:
-                    tmp[0].append(result[i+5])
-                    tmp[1].append(result[i])
-                ax.scatter(tmp[0],tmp[1],marker="x",color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
-            
-            ax.plot(self.data['time'],self.data['volt'],linestyle='-',label='E',marker='x')
-            plt.xticks(fontsize=fs)
-            plt.yticks(fontsize=fs)
-                
-            # tmpx = np.linspace(62000,63000,100)
-            # tmpy = []
-            # for value in tmpx:
-            #     tmpy.append(m[0]*np.sqrt(value)+b[0])
-            # ax.plot(tmpx,tmpy,color="red",linestyle="-")
-            
-            ax2 = ax.twinx()
-            # ax2.plot(x,y_deriv, color = 'black',linewidth=1, zorder=0,linestyle="-",label="dE/dt")  
-            ax2.scatter(self.D['time'],self.D['diff'],color="red",marker="x",label="D")
-            ax2.set_ylim(1E-11,5E-9)
-            ax2.axhline(0,color="#000000",linewidth=1)
-            
-            h1, l1 = ax.get_legend_handles_labels()
-            h2, l2 = ax2.get_legend_handles_labels()
-            ax2.legend(h1+h2, l1+l2,loc=1,fontsize=fs)
-            
-            # ax.set_xlim(610000,640000)
-            # ax.set_ylim(4.17,4.32)
-            ax2.set_yscale('log')
-            # ax2.set_ylim(-0.001,0.001)
-            ax2.set_ylim(1E-13,1.5E-9)
-            plt.yticks(fontsize=fs)
-            
-            ax.grid(zorder=-50,linestyle="--",alpha=0.66)
-            ax.set_xlabel('Time t ($10^6$ s)',fontsize=fs) 
-            ax.set_ylabel('Voltage E (V)',fontsize=fs) 
-            # ax2.set_ylabel('Derivative dE/dt [V/s]',fontsize=fs) 
-            ax2.set_ylabel('Diffusion rate D ($10^{-9}$ cm²/s)',fontsize=fs) 
-            ax.set_title("GITT Plot\nDiffusion and Voltage against Time",fontsize=fs+4)
-            
-        # if settings['cap'] or settings['spec_cap'] and D_x:
-        #     fig, ax = plt.subplots()
-
-        #     # cmap = mpl.cm.viridis
-        #     cmap = mpl.cm.tab10
-        #     values = {}
-        #     for i,value in enumerate(D_out['diff']):
-                
-        #         if D_out['cycle'][i]%2 == 0:
-        #             label = "charge cycle "
-        #         else:
-        #             label = "discharge cycle "
-                    
-        #         label += str(int(D_out['cycle'][i]/2)+1)
-                    
-        #         if i == 0:
-        #             values[D_out['cycle'][i]]=[[],[],label]
-        #         elif D_out['cycle'][i] != D_out['cycle'][i-1]:
-        #             values[D_out['cycle'][i]]=[[],[],label]
-
-        #         values[D_out['cycle'][i]][0].append(D_out['ion'][i])
-        #         values[D_out['cycle'][i]][1].append(D_out['diff'][i])
-
-        #     for key,item in values.items():
-        #         ax.scatter(item[0],item[1],marker='x',label=item[2],color=cmap(key/10),s=25,zorder=50)
-            
-        #     # make charge filled, discharge empty markers!!!
-            
-        #     # ax.scatter(x_ion,y,marker='o',label='E',c="black",s=0.1,zorder=50)
-        #     # ax.scatter(D_Li,D,marker='x',label='D',c=color,cmap=cmap,s=25,zorder=50)
-        #     # ax.scatter(x,x_ion,marker='x',label='E',c="red",s=1)
-        #     # cbar = fig.colorbar(mpl.cm.ScalarMappable(cmap=cmap),
-        #                  # ax=ax, orientation='vertical', label='')
-        #     ax.grid(zorder=-50,linestyle="--",alpha=0.66)
-        #     ax.axhline(0,color="#000000",linewidth=1)
-        #     # ax.set_ylim(0,0.2E-8)
-        #     ax.set_ylim(1E-11,1E-8)
-        #     ax.set_yscale('log')
-        #     ax.legend(fontsize=fs)
-        #     plt.xticks(fontsize=fs)
-        #     plt.yticks(fontsize=fs)
-        #     ax.set_xlabel('x$_{\mathregular{Na}}$',fontsize=fs) 
-        #     ax.set_ylabel('D ($10^{-9}$ cm²/s)',fontsize=fs) 
-        #     ax.set_title("GITT plot\n Diffusion at Varying x$_{\mathregular{Na}}$\n(x$_{\mathregular{Na}}$ at beginning of each titration step)",fontsize=fs)
-    
-        # creates and places Tkinter canvas for the matplotlib figure
-        canvas = FigureCanvasTkAgg(fig, master = self.root)   
-        canvas.draw() 
-        canvas.get_tk_widget().pack(side=tk.TOP) 
-      
-        # creates the matplotlib default toolbar 
-        toolbar = NavigationToolbar2Tk(canvas, self.root) 
-        toolbar.update() 
-        canvas.get_tk_widget().pack(side=tk.TOP) 
-
-'''
 This function processes the raw GITT data
 '''
 def process_GITT(GITT_data,settings):
@@ -365,14 +241,18 @@ def process_GITT(GITT_data,settings):
     x = GITT_data['time']
     y = GITT_data['volt']
     
-    m_AM = float(settings['m_AM'].entry.get())
-    M = float(settings['M_AM'].entry.get())
-    theocap = float(settings['theocap'].entry.get())
-    c0 = float(settings['c0'].entry.get())
-    A = float(settings['A'].entry.get())
-    scale = float(settings['scale'].entry.get())
-    limiter = float(settings['limiter'].entry.get())
-    rho = float(settings['rho'].entry.get())
+    try:
+        m_AM = float(settings['m_AM'].entry.get())
+        M = float(settings['M_AM'].entry.get())
+        theocap = float(settings['theocap'].entry.get())
+        c0 = float(settings['c0'].entry.get())
+        A = float(settings['A'].entry.get())
+        scale = float(settings['scale'].entry.get())
+        limiter = float(settings['limiter'].entry.get())
+        rho = float(settings['rho'].entry.get())
+    except:
+        messagebox.error('Faulty Settings','The settings contain non-numerical data. Please check all settings and correct.')
+        return 0,0
     
     # assigns capacity if it was provided
     # prefers special capacity over pure capacity, if both are provided
@@ -420,7 +300,6 @@ def process_GITT(GITT_data,settings):
         charge = True
 
         for i in range(len(raw_spec_cap)):
-
             y_cycle.append(current_cycle)
             if i > 1:
                 if raw_spec_cap[i] > max_cap:
@@ -455,7 +334,8 @@ def process_GITT(GITT_data,settings):
     current_off = []
     on_times = []
     off_times = []
-    load = False  
+    load = False
+    bad_fit = 0
     for i, value in enumerate(y_deriv):
         # detects positive derivative jump
         if y_deriv[i] > abs(scale*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
@@ -519,9 +399,13 @@ def process_GITT(GITT_data,settings):
             continue
         m = [regress_param.slope,regress_param.stderr]
         b = [regress_param.intercept,regress_param.intercept_stderr]
+        
         E2 = m[0]*np.sqrt(x[on]) + b[0]
         
-        GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off])) # ONLY REQUIRED FOR PLOTTING
+        if regress_param.rvalue**2 < 0.4:
+            bad_fit += 1
+        
+        GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2)) # required for plotting
         
         # collect data for output
         if settings['cap'] or settings['spec_cap']:
@@ -537,11 +421,97 @@ def process_GITT(GITT_data,settings):
         dE_t = E3-E2
         D = 4/(np.pi*tau) * (m_AM * V_mol/(M*A))**2 * ((dE_s)/(dE_t))**2
         D_out['diff'].append(D) 
+    
+    if bad_fit > 0:
+        messagebox.showinfo('Check Results','The regression for determining the onset energy yielded a bad fit {} times. Please carefully check the results for errors and outliers.'.format(bad_fit))
 
     return D_out, GITT_refined
 
+# GUI
+
 '''
-Tkinter GUI stuff
+Function for plotting results from analyzed GITT data
+messy code, refactoring not yet planned
+'''
+class plot_window:
+    # initializes the window and default plotting data
+    def __init__(self,GITT_data,GITT_refined,D_out,settings):
+        
+        self.root = create_window('1000x700+120+120', 'V-t and D-t plot')
+    
+        self.data = GITT_data
+        self.refined = GITT_refined
+        self.D = D_out
+        self.settings = settings
+        self.dpi_default = 100
+        self.dpi_set = str(self.dpi_default)
+        self.draw_window()
+        
+    # populates the window with widgets
+    def draw_window(self):
+        self.plot_form_factors()
+    
+    # creates the plot with matplotlib
+    def plot_form_factors(self): 
+        
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
+        NavigationToolbar2Tk)
+        
+        fs = 16
+        
+        fig = plt.figure(figsize=(3,3), dpi=80)
+        ax = fig.add_subplot()
+        
+        colors = ['green','blue','red']
+        alphas = [1.0,1.0,1.0]
+        labels = ['E1','E2','E3']
+        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+        for i in range(3):
+            tmp = [[],[]]
+            for result in self.refined:
+                tmp[0].append(result[i+5])
+                tmp[1].append(result[i])
+                if i == 1:
+                    ax.text(result[i+5],result[i],'R²:{:.3f}'.format(result[-1]),bbox=props)
+                    
+            ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
+            
+        ax.plot(self.data['time'],self.data['volt'],linestyle='-',label='E',marker='x')
+        plt.xticks(fontsize=fs)
+        plt.yticks(fontsize=fs)
+        
+        ax2 = ax.twinx()
+        ax2.scatter(self.D['time'],self.D['diff'],color='black',marker='+',label='D')
+        
+        h1, l1 = ax.get_legend_handles_labels()
+        h2, l2 = ax2.get_legend_handles_labels()
+        ax2.legend(h1+h2, l1+l2,loc=1,fontsize=fs)
+        
+        ax2.set_yscale('log')
+        ylim2_max = max(self.D['diff'])*5
+        ylim2_min = min(self.D['diff'])/5
+        ax2.set_ylim(ylim2_min,ylim2_max)
+        plt.yticks(fontsize=fs)
+        
+        ax.grid(zorder=-50,linestyle='--',alpha=0.66)
+        ax.set_xlabel('Time t ($10^6$ s)',fontsize=fs) 
+        ax.set_ylabel('Voltage E (V)',fontsize=fs)  
+        ax2.set_ylabel('Diffusion rate D ($10^{-9}$ cm²/s)',fontsize=fs) 
+        ax.set_title('GITT Plot\nDiffusion and Voltage against Time',fontsize=fs+4)
+    
+        # creates and places Tkinter canvas for the matplotlib figure
+        canvas = FigureCanvasTkAgg(fig, master = self.root)   
+        canvas.draw() 
+        canvas.get_tk_widget().pack(side=tk.TOP,fill='both',expand=False)
+        
+        # creates the matplotlib default toolbar 
+        toolbar = NavigationToolbar2Tk(canvas, self.root) 
+        toolbar.update()
+        canvas.get_tk_widget().pack(side=tk.TOP,fill='both',expand=True) 
+      
+'''
+Function to streamline the creation of the labeled entries
 '''
 class labeled_entry:
      
@@ -551,11 +521,11 @@ class labeled_entry:
          self._frame.grid(row=pos,column=0)
          
          self._label = ttk.Label(self._frame,width=8,font=tk.font.Font(size=fs))
-         self._label['text'] = label[0] #string.format(label[0])
+         self._label['text'] = label[0]
          self._label.grid(row=0,column=0)
          
          self._altlabel = ttk.Label(self._frame,width=8,font=tk.font.Font(size=fs))
-         self._altlabel['text'] = " "+label[1]
+         self._altlabel['text'] = ' '+label[1]
          self._altlabel.grid(row=0,column=2)
          
          self.value = tk.StringVar()
@@ -571,15 +541,15 @@ class labeled_entry:
          self.entry.grid(row=0,column=1) 
 
 '''
-creates the main window for loading and saving data
+Creates the main window for loading and saving data
 '''
 class main_window:
     
     # initializes the base window
     def __init__(self):
         
-        self.version = "0.6.0"
-        self.icon = ""
+        self.version = '0.7.0'
+        self.icon = ''
         
         # styling for font
         self.fs_head = 14
@@ -593,7 +563,7 @@ class main_window:
                 
         self.settings = {}
         
-        self.root = create_window("400x500+120+120","GITT Analysis")
+        self.root = create_window('400x500+120+120','GITT Analysis')
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
         self.frame_buttons()
@@ -611,7 +581,7 @@ class main_window:
         self.frame_entry_fields.columnconfigure(0, weight=1)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
-                                      text = "Properties Active Material (AM)",
+                                      text = 'Properties Active Material (AM)',
                                       font = tk.font.Font(size=self.fs_head))
         self.entries_title.grid(row=0,column=0)
         
@@ -651,7 +621,7 @@ class main_window:
             fs = self.fs_norm)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
-                                      text = "Properties Measurement",
+                                      text = 'Properties Measurement',
                                       font = tk.font.Font(size=self.fs_head))
         self.entries_title.grid(row=6,column=0)
         
@@ -663,7 +633,7 @@ class main_window:
             fs = self.fs_norm)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
-                                      text = "Settings Analysis",
+                                      text = 'Settings Analysis',
                                       font = tk.font.Font(size=self.fs_head))
         self.entries_title.grid(row=8,column=0)
         
@@ -783,7 +753,7 @@ class main_window:
                 filetypes=filetypes)
             
             if os.path.isfile(self.raw_file) == True:
-                self.GITT_data = fetch_GITT_data(self.raw_file)
+                self.GITT_data = get_GITT_data(self.raw_file)
                 if self.GITT_data != 0:
                     self.raw_filename = 'GITT raw data loaded: '+self.raw_file
                     self.frame_top_buttons.destroy()
@@ -791,7 +761,7 @@ class main_window:
                     fetch_GITT_settings()
                     self.settings['name'] = os.path.basename(self.raw_file.split('.')[0])                
             elif not self.raw_file == '':
-                messagebox.showerror("No input file!", "Input file could not be found!")
+                messagebox.showerror('No input file!', 'Input file could not be found!')
         
         '''
         This function processes raw GITT data. Depending on whether launched in an OriginLab
@@ -800,7 +770,7 @@ class main_window:
         '''
         def try_process_GITT():
             if self.GITT_data == 0:
-                messagebox.showerror("No GITT data", "No GITT data loaded!")
+                messagebox.showerror('No GITT data', 'No GITT data loaded!')
             else:
                 self.D_data, GITT_extra = process_GITT(self.GITT_data,self.settings)
                 self.frame_top_buttons.destroy()
@@ -819,7 +789,7 @@ class main_window:
         '''
         def save_GITT():
             if self.GITT_data == 0:
-                messagebox.showerror("No GITT data", "No GITT data loaded!")
+                messagebox.showerror('No GITT data', 'No GITT data loaded!')
                 return
             elif self.D_data == 0:
                 self.D_data, GITT_extra = process_GITT(self.GITT_data,self.settings)
@@ -835,7 +805,7 @@ class main_window:
         This function handles the window containing an overview about the formatting of the raw GITT data input file and the meaning of the different required settings for processing.
         '''
         def getting_help():
-            help_frame = create_window("850x550+120+120", "Quick Tips",self.icon)
+            help_frame = create_window('850x550+120+120', 'Quick Tips',self.icon)
             help_frame.config(bg='#FFFFFF')
             message ='''Format raw data:
 Natively works with standard output format from BioLogic cyclers. An example raw data file in that format can be generated with the button below. As alternative to tab stops, commas (regular CSV file formatting) or spaces can be used in the input file, e.g.,
@@ -881,65 +851,44 @@ or via the OPX file, the results are automatically filled into a new workbook up
 If program is run as standalone, results are automatically plotted upon analysis.
 '''
 
-            text_box = tk.Text(help_frame, wrap = "word")
+            text_box = tk.Text(help_frame, wrap = 'word')
             text_box.pack(expand=False,fill=tk.X)
             text_box.insert('end', message)
             text_box.config(state='disabled')
             
             button_example = ttk.Button(help_frame,
                                         text = 'Make Example Input',
-                                        command = lambda : write_example_GITT())
+                                        command = lambda : write_GITT_example())
             button_example.pack(side=tk.BOTTOM,expand=False,fill=tk.X) 
         
         '''
         This function handles the window containing a short description, version, and license of the program.
         '''
         def about():
-            about_frame = create_window("850x600+120+120", "About BondFinder",self.icon)
+            about_frame = create_window('850x600+120+120', 'About BondFinder',self.icon)
             about_frame.config(bg='#FFFFFF')
             message ='''GITT_analysis, version {}
             
-GITT_analysis analyzes raw GITT data to extract the diffusion coefficients of the conducting ion based on the mini-review "Principle and Applications of Galvanostatic Intermittent Titration Technique for Lithium-ion Batteries" by Jaeyoung Kim, Sangbin Park, Sunhyun Hwang, and Won-Sub Yoon. (DOI: https://doi.org/10.33961/jecst.2021.00836) and equation 16, in particular.
+GITT_analysis analyzes raw GITT data to extract the diffusion coefficients of the conducting ion based on the mini-review 'Principle and Applications of Galvanostatic Intermittent Titration Technique for Lithium-ion Batteries' by Jaeyoung Kim, Sangbin Park, Sunhyun Hwang, and Won-Sub Yoon. (DOI: https://doi.org/10.33961/jecst.2021.00836) and equation 16, in particular.
 
 MIT License
 Copyright (c) 2025 mhaefner-chem
 Contact: michael.haefner@uni-bayreuth.de
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the 'Software'), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''.format(self.version)
 
-            text_box = tk.Text(about_frame, wrap = "word", height=50)
+            text_box = tk.Text(about_frame, wrap = 'word', height=50)
             text_box.pack(expand=True,fill=tk.X)
             text_box.insert('end', message)
             text_box.config(state='disabled')
     
         top_buttons(self)
         bottom_buttons(self)
-
-'''
-function that ensures that the created windows do not become bigger than the screen
-'''
-def window_size_limiter(avail_wxh,req_wxh,req_offset_xy):
-
-    actual_wxh = [0,0]
-    actual_offsets = [0,0]
-    
-    # check whether window fits on the current screen with and without offsets
-    for i in range(len(avail_wxh)):
-        if req_wxh[i] > avail_wxh[i]:
-            actual_wxh[i] = avail_wxh[i]
-        elif req_wxh[i] + req_offset_xy[i] > avail_wxh[i]:
-            actual_wxh[i] = req_wxh[i]
-            actual_offsets[i] = avail_wxh[i] - req_wxh[i]
-        else:
-            actual_wxh[i] = req_wxh[i]
-            actual_offsets[i] = req_offset_xy[i]
-    
-    return actual_wxh,actual_offsets
 
 '''
 function that creates a new window
@@ -977,6 +926,27 @@ def create_window(dimensions='500x350+100+100', title = 'You should not be readi
         window.iconbitmap(icon)
     
     return window
+
+'''
+function that ensures that the created windows do not become bigger than the screen
+'''
+def window_size_limiter(avail_wxh,req_wxh,req_offset_xy):
+
+    actual_wxh = [0,0]
+    actual_offsets = [0,0]
+    
+    # check whether window fits on the current screen with and without offsets
+    for i in range(len(avail_wxh)):
+        if req_wxh[i] > avail_wxh[i]:
+            actual_wxh[i] = avail_wxh[i]
+        elif req_wxh[i] + req_offset_xy[i] > avail_wxh[i]:
+            actual_wxh[i] = req_wxh[i]
+            actual_offsets[i] = avail_wxh[i] - req_wxh[i]
+        else:
+            actual_wxh[i] = req_wxh[i]
+            actual_offsets[i] = req_offset_xy[i]
+    
+    return actual_wxh,actual_offsets
 
 if __name__ == '__main__':
     import tkinter as tk
