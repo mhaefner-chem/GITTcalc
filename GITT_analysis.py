@@ -78,7 +78,7 @@ and reopening.
 '''
 def write_GITT_settings(settings_file, settings):
     
-    number_settings = ['theocap','m_AM','M_AM','rho','c0','A','scale','limiter']
+    number_settings = ['theocap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
     with open(settings_file, mode='w') as f:
         for item in number_settings:                      
             value = settings[item].entry.get()
@@ -242,11 +242,11 @@ def process_GITT(GITT_data,settings):
     y = GITT_data['volt']
     
     try:
-        m_AM = float(settings['m_AM'].entry.get())
+        A = float(settings['A'].entry.get())
+        m_AM = float(settings['m_AM/A'].entry.get())*A
         M = float(settings['M_AM'].entry.get())
         theocap = float(settings['theocap'].entry.get())
         c0 = float(settings['c0'].entry.get())
-        A = float(settings['A'].entry.get())
         scale = float(settings['scale'].entry.get())
         limiter = float(settings['limiter'].entry.get())
         rho = float(settings['rho'].entry.get())
@@ -422,8 +422,32 @@ def process_GITT(GITT_data,settings):
         D = 4/(np.pi*tau) * (m_AM * V_mol/(M*A))**2 * ((dE_s)/(dE_t))**2
         D_out['diff'].append(D) 
     
+    # check whether there is issues with the titration lengths
+    def evaluate_tau(taus):
+        
+        buckets = [0,0,0]
+        tot_length = [0,0,0]
+        n_taus = len(taus)
+        median = np.median(taus)
+        
+        for tau in taus:
+            if tau > 0.95*median and tau < 1.05*median:
+                buckets[1] += 1
+                tot_length[1] += tau
+            elif tau > 1.05*median:   
+                buckets[2] += 1
+                tot_length[2] += tau
+            elif tau < 0.95*median:
+                buckets[0] += 1
+                tot_length[0] += tau
+        
+        if tot_length[2] > tot_length[1] or buckets[2] > 0.01*buckets[1]:
+            messagebox.showwarning('Check Results','A significant number of abnormally long titration cycles was obtained, indicating that the program failed to correctly identify all titration cycles. Please reduce the settings \'scale\' and \'limiter\'.')
+
+    evaluate_tau(list(zip(*GITT_refined))[4])
+    
     if bad_fit > 0:
-        messagebox.showinfo('Check Results','The regression for determining the onset energy yielded a bad fit {} times. Please carefully check the results for errors and outliers.'.format(bad_fit))
+        messagebox.showinfo('Check Results','The regression for determining the onset energy yielded a bad fit {} times. Please check the results for errors and outliers.'.format(bad_fit))
 
     return D_out, GITT_refined
 
@@ -515,16 +539,16 @@ Function to streamline the creation of the labeled entries
 '''
 class labeled_entry:
      
-     def __init__(self, parent_frame, pos, label, init_value, fs=12):
+     def __init__(self, parent_frame, pos, label, init_value):
          
          self._frame = tk.Frame(parent_frame)
          self._frame.grid(row=pos,column=0)
          
-         self._label = ttk.Label(self._frame,width=8,font=tk.font.Font(size=fs))
+         self._label = ttk.Label(self._frame,width=8)
          self._label['text'] = label[0]
          self._label.grid(row=0,column=0)
          
-         self._altlabel = ttk.Label(self._frame,width=8,font=tk.font.Font(size=fs))
+         self._altlabel = ttk.Label(self._frame,width=8)
          self._altlabel['text'] = ' '+label[1]
          self._altlabel.grid(row=0,column=2)
          
@@ -533,8 +557,7 @@ class labeled_entry:
              self._frame,
              textvariable=self.value,
              width=12,
-             justify='right',
-             font=tk.font.Font(size=fs)
+             justify='right'
          )
          self.entry.insert(0, init_value)
 
@@ -548,13 +571,8 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.7.0'
+        self.version = '0.7.1'
         self.icon = ''
-        
-        # styling for font
-        self.fs_head = 14
-        self.fs_norm = 11
-        self.fs_note = 8
         
         self.raw_file = None
         self.raw_filename = ''
@@ -581,75 +599,65 @@ class main_window:
         self.frame_entry_fields.columnconfigure(0, weight=1)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
-                                      text = 'Properties Active Material (AM)',
-                                      font = tk.font.Font(size=self.fs_head))
+                                      text = 'Properties Active Material (AM)'
+                                      )
         self.entries_title.grid(row=0,column=0)
         
-        self.settings['m_AM'] = labeled_entry(
+        self.settings['m_AM/A'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 1, 
-            label = ['m','g'], 
-            init_value = 1,
-            fs = self.fs_norm)
+            label = ['m/A','g/cm²'], 
+            init_value = 1)
         
         self.settings['M_AM'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 2, 
             label = ['M','g/mol'], 
-            init_value = 13,
-            fs = self.fs_norm)
+            init_value = 13)
         
         self.settings['rho'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 3, 
             label = ['ρ','g/cm³'], 
-            init_value = 55,
-            fs = self.fs_norm)
+            init_value = 55)
         
         self.settings['theocap'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 4, 
             label = ['ref cap.','mAh/g'], 
-            init_value = 100,
-            fs = self.fs_norm)
+            init_value = 100)
         
         self.settings['c0'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 5, 
             label = ['c_0 (ion)',''], 
-            init_value = 1.0,
-            fs = self.fs_norm)
+            init_value = 1.0)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
-                                      text = 'Properties Measurement',
-                                      font = tk.font.Font(size=self.fs_head))
+                                      text = 'Properties Measurement')
         self.entries_title.grid(row=6,column=0)
         
         self.settings['A'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 7, 
             label = ['A_cont','cm²'], 
-            init_value = 1.25,
-            fs = self.fs_norm)
+            init_value = 1.25)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
-                                      text = 'Settings Analysis',
-                                      font = tk.font.Font(size=self.fs_head))
+                                      text = 'Settings Analysis')
         self.entries_title.grid(row=8,column=0)
         
         self.settings['scale'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 9, 
             label = ['scale',''], 
-            init_value = 1,
-            fs = self.fs_norm)
+            init_value = 1)
         
         self.settings['limiter'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 10, 
             label = ['limiter',''], 
-            init_value = 0.01,
-            fs = self.fs_norm)
+            init_value = 0.01)
         
     '''
     This frame handles all relevant buttons.
@@ -689,7 +697,6 @@ class main_window:
             sep_top2.grid(row=3,column=0,columnspan=columns,sticky='EW')
             
             label_GITT_file = tk.Text(self.frame_top_buttons,
-                                          font = tk.font.Font(size=self.fs_note),
                                           height=3)
             if self.GITT_data == 0:
                 label_GITT_file.insert(tk.END,'No raw GITT data loaded.')
@@ -729,7 +736,7 @@ class main_window:
         '''
         def fetch_GITT_settings():
             
-            number_settings = ['theocap','m_AM','M_AM','rho','c0','A','scale','limiter']
+            number_settings = ['theocap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
             settings_file = self.raw_file.split('.')[0]+'.info'
             if os.path.isfile(settings_file):
                 with open(settings_file, mode='r') as f:
@@ -822,8 +829,8 @@ Time/s,Ewe/V,Capacity/mA.h,SpecificCapacity/mA.h/g
 Capacity data is not required for analysis. Only time and voltage are required.
 
 Settings for analysis:
-m
-    mass of the active material in g
+m/A
+    area-normed mass of the active material in g/cm²
 M
     molar mass of the active material in g/mol
 ρ
