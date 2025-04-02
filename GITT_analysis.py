@@ -103,10 +103,10 @@ def write_GITT_example():
         
         for t in t_out:
             if t < 900:
-                volt_out.append((np.sqrt(t)/300 + 0.1)*charge + volt_in)
+                volt_out.append((np.sqrt(t)/900 + 0.05)*charge + volt_in)
                 cap_out.append(cap_in + t/4500)
             else:
-                volt_out.append((np.exp(-(t-900)/900)/20 + 0.05)*charge + volt_in)
+                volt_out.append((np.exp(-(t-300)/900)/20 + 0.03)*charge + volt_in)
                 cap_out.append(cap_out[-1])
                 
         for i in range(len(t_out)):
@@ -390,7 +390,7 @@ def process_GITT(GITT_data,settings):
         # E2 requires linear regression for sqrt-behavior while current is applied
         interval_x = []
         interval_y = []
-        for j in range(on+int((on-off)/2),off):
+        for j in range(on,off):#+int((on-off)/2),off):
             interval_x.append(np.sqrt(x[j]))
             interval_y.append(y[j])
         try:
@@ -571,7 +571,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.7.1'
+        self.version = '0.7.2'
         self.icon = ''
         
         self.raw_file = None
