@@ -243,7 +243,7 @@ def process_GITT(GITT_data,settings):
     
     try:
         A = float(settings['A'].entry.get())
-        m_AM = float(settings['m_AM/A'].entry.get())*A
+        m_AM = float(settings['m_AM/A'].entry.get())*A/1000
         M = float(settings['M_AM'].entry.get())
         theocap = float(settings['theocap'].entry.get())
         c0 = float(settings['c0'].entry.get())
@@ -571,7 +571,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.7.2'
+        self.version = '0.7.3'
         self.icon = ''
         
         self.raw_file = None
@@ -606,7 +606,7 @@ class main_window:
         self.settings['m_AM/A'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 1, 
-            label = ['m/A','g/cm²'], 
+            label = ['m/A','mg/cm²'], 
             init_value = 1)
         
         self.settings['M_AM'] = labeled_entry(
@@ -693,6 +693,13 @@ class main_window:
                                            command = lambda : save_GITT())
             _button_save_GITT.grid(row=1,column=2,sticky='NS')
             
+            try:
+                import originpro as op
+                op.org_ver()
+                _button_save_GITT['state'] = 'disabled'
+            except:
+                pass
+            
             sep_top2 = ttk.Separator(self.frame_top_buttons,orient='horizontal')
             sep_top2.grid(row=3,column=0,columnspan=columns,sticky='EW')
             
@@ -776,6 +783,7 @@ class main_window:
         plots the D-t and V-t diagram for checking the sensibility of the results
         '''
         def try_process_GITT():
+            import sys
             if self.GITT_data == 0:
                 messagebox.showerror('No GITT data', 'No GITT data loaded!')
             else:
@@ -788,9 +796,10 @@ class main_window:
                     import originpro as op
                     op.org_ver()
                     write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
+                    self.root.destroy()
+                    sys.exit()
                 except:
                     plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
-        
         '''
         This function handles GUI side of saving the processed GITT data.
         '''
