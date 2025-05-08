@@ -38,6 +38,6 @@ If run inside the OriginLab command window with
 ```console
 run -pyf GITT_analysis.py
 ```
-only the packages `numpy` and `scipy` need to be installed via OriginLab's native package manager. For further information on how to install python packages in OriginLab, please consult their [website](https://www.originlab.com/doc/python/Python-Packages).
+the packages `numpy`, `matplotlib`, and `scipy` need to be installed via OriginLab's native package manager. For further information on how to install python packages in OriginLab, please consult their [website](https://www.originlab.com/doc/python/Python-Packages).
 
 
