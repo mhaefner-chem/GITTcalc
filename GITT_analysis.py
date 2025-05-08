@@ -372,6 +372,7 @@ def process_GITT(GITT_data,settings):
     off = 0
     for i, on in enumerate(current_on):    
         # determines the next point after on at which current is turned off
+        relax = x[on]-x[off]
         for off in current_off:
             if off > on:
                 break
@@ -405,7 +406,7 @@ def process_GITT(GITT_data,settings):
         if regress_param.rvalue**2 < 0.4:
             bad_fit += 1
         
-        GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2)) # required for plotting
+        GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2,relax)) # required for plotting
         
         # collect data for output
         if settings['cap'] or settings['spec_cap']:
@@ -423,28 +424,38 @@ def process_GITT(GITT_data,settings):
         D_out['diff'].append(D) 
     
     # check whether there is issues with the titration lengths
-    def evaluate_tau(taus):
+    def evaluate_tau(taus,relaxes):
         
         buckets = [0,0,0]
         tot_length = [0,0,0]
-        n_taus = len(taus)
-        median = np.median(taus)
+        median_tau = np.median(taus)
+        median_rlx = np.median(relaxes)
         
         for tau in taus:
-            if tau > 0.95*median and tau < 1.05*median:
+            if tau > 0.95*median_tau and tau < 1.05*median_tau:
                 buckets[1] += 1
                 tot_length[1] += tau
-            elif tau > 1.05*median:   
+            elif tau > 1.05*median_tau:   
                 buckets[2] += 1
                 tot_length[2] += tau
-            elif tau < 0.95*median:
+            elif tau < 0.95*median_tau:
                 buckets[0] += 1
                 tot_length[0] += tau
         
         if tot_length[2] > tot_length[1] or buckets[2] > 0.01*buckets[1]:
             messagebox.showwarning('Check Results','A significant number of abnormally long titration cycles was obtained, indicating that the program failed to correctly identify all titration cycles. Please reduce the settings \'scale\' and \'limiter\'.')
+        
+        if median_tau > median_rlx/4:
+            messagebox.showwarning('Titration timings','''Titration duration
+Current applied for {:.2f} s
+Relaxing for {:.2f} s
+Relaxation time is relatively short compared to charging time. Make sure that the relaxation is sufficiently long!'''.format(median_tau,median_rlx))
+        elif settings['timing'].get():
+            messagebox.showinfo('Titration timings','''Titration duration
+Current applied for {:.2f} s
+Relaxing for {:.2f} s'''.format(median_tau,median_rlx))
 
-    evaluate_tau(list(zip(*GITT_refined))[4])
+    evaluate_tau(list(zip(*GITT_refined))[4],list(zip(*GITT_refined))[9])
     
     if bad_fit > 0:
         messagebox.showinfo('Check Results','The regression for determining the onset energy yielded a bad fit {} times. Please check the results for errors and outliers.'.format(bad_fit))
@@ -481,6 +492,13 @@ class plot_window:
         import matplotlib.pyplot as plt
         from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
         NavigationToolbar2Tk)
+        import matplotlib as mpl
+        
+        plt.close('all')
+        mpl.use('pgf')
+        mpl.use('pdf')
+        mpl.use('ps')
+        mpl.use('svg')
         
         fs = 16
         
@@ -571,7 +589,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.7.3'
+        self.version = '0.7.4'
         self.icon = ''
         
         self.raw_file = None
@@ -581,7 +599,7 @@ class main_window:
                 
         self.settings = {}
         
-        self.root = create_window('400x500+120+120','GITT Analysis')
+        self.root = create_window('450x550+120+120','GITT Analysis')
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
         self.frame_buttons()
@@ -595,13 +613,15 @@ class main_window:
     def frame_entry_fields(self):
         
         self.frame_entry_fields = tk.Frame(self.root)
-        self.frame_entry_fields.grid(row=1,column=0)
+        self.frame_entry_fields.grid(row=1,column=0,sticky='N')
         self.frame_entry_fields.columnconfigure(0, weight=1)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
                                       text = 'Properties Active Material (AM)'
                                       )
-        self.entries_title.grid(row=0,column=0)
+        self.entries_title.grid(row=1,column=0)
+        
+        
         
         self.settings['m_AM/A'] = labeled_entry(
             self.frame_entry_fields, 
@@ -659,6 +679,23 @@ class main_window:
             label = ['limiter',''], 
             init_value = 0.01)
         
+        self.frame_checkbts = tk.Frame(self.frame_entry_fields)
+        self.frame_checkbts.grid(row=11,column=0,sticky='N')
+        
+        self.settings['plot'] = tk.BooleanVar()
+        _checkbt_plot = tk.Checkbutton(self.frame_checkbts, text = "Plot results", 
+                variable = self.settings['plot'], 
+                onvalue = True, 
+                offvalue = False)
+        _checkbt_plot.grid(row=0,column=0,sticky='W')
+        
+        self.settings['timing'] = tk.BooleanVar()
+        _checkbt_plot = tk.Checkbutton(self.frame_checkbts, text = "Print timings", 
+                variable = self.settings['timing'], 
+                onvalue = True, 
+                offvalue = False)
+        _checkbt_plot.grid(row=0,column=1,sticky='W')
+        
     '''
     This frame handles all relevant buttons.
     '''
@@ -703,8 +740,9 @@ class main_window:
             sep_top2 = ttk.Separator(self.frame_top_buttons,orient='horizontal')
             sep_top2.grid(row=3,column=0,columnspan=columns,sticky='EW')
             
+            
             label_GITT_file = tk.Text(self.frame_top_buttons,
-                                          height=3)
+                                          height=4)
             if self.GITT_data == 0:
                 label_GITT_file.insert(tk.END,'No raw GITT data loaded.')
             else:
@@ -786,7 +824,7 @@ class main_window:
             import sys
             if self.GITT_data == 0:
                 messagebox.showerror('No GITT data', 'No GITT data loaded!')
-            else:
+            else:                
                 self.D_data, GITT_extra = process_GITT(self.GITT_data,self.settings)
                 self.frame_top_buttons.destroy()
                 top_buttons(self)
@@ -796,10 +834,14 @@ class main_window:
                     import originpro as op
                     op.org_ver()
                     write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
-                    self.root.destroy()
-                    sys.exit()
+                    if self.settings['plot'].get():
+                        plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
+                    else:
+                        self.root.destroy()
+                        sys.exit()
                 except:
-                    plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
+                    if self.settings['plot'].get():
+                        plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
         '''
         This function handles GUI side of saving the processed GITT data.
         '''
@@ -970,13 +1012,5 @@ if __name__ == '__main__':
     from tkinter import filedialog as fd
     from tkinter import messagebox
     import os
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-    
-    plt.close('all')
-    mpl.use('pgf')
-    mpl.use('pdf')
-    mpl.use('ps')
-    mpl.use('svg')
     
     main = main_window()
