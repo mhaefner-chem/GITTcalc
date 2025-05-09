@@ -166,23 +166,63 @@ def write_GITT_2_origin(data_raw,data_out,settings):
     # worksheet for processed data
     wks_diff = book.add_sheet(name='diffusion_data')
     if settings['cap'] or settings['spec_cap']:
-        wks_diff.cols = 6
-    else:
-        wks_diff.cols = 3
-        
-    wks_diff.from_list(0,data_out['time'],lname='Time',units='s')
-    wks_diff.from_list(1,data_out['volt'],lname='Voltage',units='V')
-    wks_diff.from_list(2,data_out['diff'],lname='Diffusion Coefficient',units='cm²/s')
-    if settings['cap'] or settings['spec_cap']:
-        wks_diff.from_list(3,data_out['spec_cap'],lname='Specific Capacity',units='mAh/g')
-        wks_diff.from_list(4,data_out['ion'],lname='Content Conducting Ion',units='')
-        
+        cols = 6
         half_cycle_label = []
         for value in data_out['cycle']:
             half_cycle_label.append(value + 1)
+    else:
+        cols = 3
+    wks_diff.cols = cols
+    
+    clm_info = [
+        {'data':data_out['time'],'label':'Time','units':'s','comments':''},
+        {'data':data_out['volt'],'label':'Voltage','units':'V','comments':''},
+        {'data':data_out['diff'],'label':'Diffusion Coefficient','units':'cm²/s','comments':''},
+        {'data':data_out['spec_cap'],'label':'Specific Capacity','units':'mAh/g','comments':''},
+        {'data':data_out['ion'],'label':'Content Conducting Ion','units':'','comments':''},
+        {'data':half_cycle_label,'label':'Half Cycle','units':'','comments':'odd cycles: charge, even cycles: discharge'}
+        ]
+    
+    for idx in range(cols):    
+        wks_diff.from_list(idx,
+                           clm_info[idx]['data'],
+                           lname=clm_info[idx]['label'],
+                           units=clm_info[idx]['units'],
+                           comments=clm_info[idx]['comments'])
         
-        wks_diff.from_list(5,half_cycle_label,lname='Half Cycle',units='',
-                           comments='odd cycles: charge, even cycles: discharge')
+
+    if settings['cap'] or settings['spec_cap']:
+        # half cycle worksheets
+        current_cycle = -1
+        block_idx = []
+        for idx, cycle in enumerate(data_out['cycle']):
+            if cycle > current_cycle:
+                block_idx.append(idx)
+                current_cycle = cycle
+
+        wks_cycs = []
+        for idx, value in enumerate(block_idx):
+            if idx%2 == 0:
+                name = 'Charge {}'.format(1+idx//2)
+            else:
+                name = 'Discharge {}'.format(1+idx//2)
+                
+            wks_cycs.append(book.add_sheet(name=name))
+            wks_cycs[-1].cols = cols-1
+            
+            if idx == len(block_idx)-1:
+                lo_bound = block_idx[idx]
+                hi_bound = len(data_out['cycle']) 
+            else:
+                lo_bound = block_idx[idx]
+                hi_bound = block_idx[idx+1]
+              
+            for iidx in range(cols-1):
+                wks_cycs[-1].from_list(iidx,
+                                   clm_info[iidx]['data'][lo_bound:hi_bound],
+                                   lname=clm_info[iidx]['label'],
+                                   units=clm_info[iidx]['units'],
+                                   comments=clm_info[iidx]['comments'])           
 
 '''
 function outputs diffusion data
@@ -514,8 +554,8 @@ class plot_window:
             for result in self.refined:
                 tmp[0].append(result[i+5])
                 tmp[1].append(result[i])
-                if i == 1:
-                    ax.text(result[i+5],result[i],'R²:{:.3f}'.format(result[-1]),bbox=props)
+                # if i == 1:
+                    # ax.text(result[i+5],result[i],'R²:{:.3f}'.format(result[8]),bbox=props)
                     
             ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
             
@@ -589,7 +629,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.7.4'
+        self.version = '0.8.0'
         self.icon = ''
         
         self.raw_file = None
