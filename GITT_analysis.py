@@ -78,11 +78,16 @@ and reopening.
 '''
 def write_GITT_settings(settings_file, settings):
     
-    number_settings = ['theocap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
+    number_settings = ['refcap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
     with open(settings_file, mode='w') as f:
-        for item in number_settings:                      
-            value = settings[item].entry.get()
-            f.write('{} {}\n'.format(item,value))
+        for item in number_settings:  
+            value = settings[item].entry_main.get()
+
+            if not item in ['scale','limiter']:
+                value += ','
+                value += settings[item].entry_error.get()
+
+            f.write('{},{}\n'.format(item,value))
             
 '''
 This function writes an example file with mock GITT data.
@@ -177,9 +182,9 @@ def write_GITT_2_origin(data_raw,data_out,settings):
     clm_info = [
         {'data':data_out['time'],'label':'Time','units':'s','comments':''},
         {'data':data_out['volt'],'label':'Voltage','units':'V','comments':''},
-        {'data':data_out['diff'],'label':'Diffusion Coefficient','units':'cm²/s','comments':''},
-        {'data':data_out['spec_cap'],'label':'Specific Capacity','units':'mAh/g','comments':''},
-        {'data':data_out['ion'],'label':'Content Conducting Ion','units':'','comments':''},
+        {'data':[x[0] for x in data_out['diff']],'label':'Diffusion Coefficient','units':'cm²/s','comments':''}, ### NO ERROR YET
+        {'data':[x[0] for x in data_out['spec_cap']],'label':'Specific Capacity','units':'mAh/g','comments':''},
+        {'data':[x[0] for x in data_out['ion']],'label':'Content Conducting Ion','units':'','comments':''},
         {'data':half_cycle_label,'label':'Half Cycle','units':'','comments':'odd cycles: charge, even cycles: discharge'}
         ]
     
@@ -243,7 +248,7 @@ def write_GITT_data(savefile,data_out,settings):
         if settings['cap'] or settings['spec_cap']:            
             f.write('{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','Cycle'))
             for i,value in enumerate(data_out['diff']):
-                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['ion'][i],data_out['spec_cap'][i],data_out['diff'][i],data_out['cycle'][i]))
+                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['ion'][i][0],data_out['spec_cap'][i][0],data_out['diff'][i][0],data_out['cycle'][i])) ### NO ERROR YET
         else:
             f.write('{:16},{:16},{:16}\n'.format('time/s','volt/V','D/cm^2/s'))
             for i,value in enumerate(data_out['diff']):
@@ -281,18 +286,16 @@ def process_GITT(GITT_data,settings):
     x = GITT_data['time']
     y = GITT_data['volt']
     
-    try:
-        A = float(settings['A'].entry.get())
-        m_AM = float(settings['m_AM/A'].entry.get())*A/1000
-        M = float(settings['M_AM'].entry.get())
-        theocap = float(settings['theocap'].entry.get())
-        c0 = float(settings['c0'].entry.get())
-        scale = float(settings['scale'].entry.get())
-        limiter = float(settings['limiter'].entry.get())
-        rho = float(settings['rho'].entry.get())
-    except:
-        messagebox.error('Faulty Settings','The settings contain non-numerical data. Please check all settings and correct.')
-        return 0,0
+    p_list = ['A','m_AM/A','M_AM','refcap','c0','rho','scale','limiter']
+    p_val = {}
+    
+    for p_key in p_list:
+        p_val[p_key] = [0,0]
+        try:
+            p_val[p_key][0] = float(settings[p_key].entry_main.get())
+        except:
+            messagebox.error('Faulty Settings','The setting {} contains non-numerical data. Please check setting and correct.'.format(p_key))
+            return 0,0
     
     # assigns capacity if it was provided
     # prefers special capacity over pure capacity, if both are provided
@@ -305,6 +308,32 @@ def process_GITT(GITT_data,settings):
     elif 'cap' in GITT_data:
         x_cap = GITT_data['cap']
         settings['cap'] = True  
+    
+    def calculate_m_AM(m_AM_A,A):
+        
+        m_AM = m_AM_A[0] * A[0] / 1000
+        
+        d_m_AM_A = m_AM_A[1]/(1000*A[0])
+        d_A = A[1]*m_AM_A[0]/(1000*A[0]**2)        
+        m_AM_err = np.sqrt(d_A**2+d_m_AM_A**2)
+        
+        return m_AM, m_AM_err
+    
+    p_val['m_AM'] = calculate_m_AM(p_val['m_AM/A'],p_val['A'])
+    
+    def calculate_V_mol(M_AM,rho):
+        
+        V_mol = M_AM[0] / rho[0]
+        
+        d_M_AM = M_AM[1]/(rho[0])
+        d_rho = rho[1]*M_AM[0]/(rho[0]**2)        
+        V_mol_err = np.sqrt(d_M_AM**2+d_rho**2)
+        
+        return V_mol, V_mol_err
+    
+    p_val['V_mol'] = calculate_m_AM(p_val['M_AM'],p_val['rho'])
+    
+    
     
     # calculate specific capacity, current cycle, and ion content at every given time
     charge = True
@@ -319,7 +348,7 @@ def process_GITT(GITT_data,settings):
     # i.e., capacity is reset to 0 for every new charge or discharge cycle
     # capacity only ever rises and never decreases
     if settings['cap']:
-        for i, cap in enumerate(x_cap):    
+        for i, cap in enumerate(x_cap):
             y_cycle.append(current_cycle)
             if i > 1 and x_cap[i]-x_cap[i-1] < 0:
                 current_cycle += 1
@@ -329,12 +358,26 @@ def process_GITT(GITT_data,settings):
                 else:
                     charge = True
                     ref_cap = ref_cap-x_cap[i-1]
+            spec_cap = [0,0]
             if charge == True:
-                spec_cap = (ref_cap+cap)/m_AM
+                spec_cap[0] = (ref_cap+cap)/p_val['m_AM'][0]
             else:
-                spec_cap = (ref_cap-cap)/m_AM
+                spec_cap[0] = (ref_cap-cap)/p_val['m_AM'][0]
+            spec_cap[1] = p_val['m_AM'][1]/p_val['m_AM'][0]**2
             x_spec_cap.append(spec_cap)
-            x_ion.append(-spec_cap/theocap + c0)
+            
+            def calculate_x_ion(spec_cap,ref_cap,c0):
+                x_ion_value = -spec_cap[0]/ref_cap[0] + c0[0]
+                               
+                d_spec_cap = spec_cap[1]/ref_cap[0]
+                d_ref_cap = ref_cap[1]*spec_cap[0]/ref_cap[0]**2
+                d_c0 = c0[1]
+                x_ion_err = np.sqrt(d_spec_cap**2+d_ref_cap**2+d_c0**2)
+                
+                return [x_ion_value, x_ion_err]
+            
+            x_ion.append(calculate_x_ion(spec_cap,p_val['refcap'],p_val['c0']))
+            
             
     elif settings['spec_cap']:
         charge = True
@@ -354,19 +397,20 @@ def process_GITT(GITT_data,settings):
                         charge = True
                         ref_cap = ref_cap-max_cap
                     max_cap = 0
-                    
+                
+                spec_cap = [0,0]
                 if charge == True:
-                    spec_cap = (ref_cap+raw_spec_cap[i])
+                    spec_cap[0] = (ref_cap+raw_spec_cap[i])
                 else:
-                    spec_cap = (ref_cap-raw_spec_cap[i])
+                    spec_cap[0] = (ref_cap-raw_spec_cap[i])
                     
-                x_spec_cap.append(spec_cap)
-                x_ion.append(-spec_cap/theocap + c0)
+                x_spec_cap.append(spec_cap) # cannot compute error without errors from measurement yet
+                x_ion.append(calculate_x_ion(spec_cap,p_val['refcap'],p_val['c0']))
 
     # get numerical derivative of voltage
     # cutoff determines minimum jump in derivative required for it to be counted
     y_deriv = get_numerical_derivative(x, y)
-    y_deriv_cutoff = limiter*np.mean(list(map(abs, y_deriv)))
+    y_deriv_cutoff = p_val['limiter'][0]*np.mean(list(map(abs, y_deriv)))
 
     # this part detects when the current is applied and removed
     # makes this less dependent on format of GITT data
@@ -376,9 +420,11 @@ def process_GITT(GITT_data,settings):
     off_times = []
     load = False
     bad_fit = 0
+    bad_expol = 0    
+    
     for i, value in enumerate(y_deriv):
         # detects positive derivative jump
-        if y_deriv[i] > abs(scale*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
+        if y_deriv[i] > abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
             # switches meaning of jump depending of whether the cell is currently being charged or discharged
             if len(current_on) == 0 or y[current_on[-1]] < y[i]:
                 current_on.append(i)
@@ -388,7 +434,7 @@ def process_GITT(GITT_data,settings):
                off_times.append(x[i])
             load = True
         # detects negative derivative jump, same logic as for positive derivative jump but flipped
-        elif y_deriv[i] < -abs(scale*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
+        elif y_deriv[i] < -abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
             if len(current_on) == 0 or y[current_on[-1]] < y[i]:
                 current_off.append(i)
                 off_times.append(x[i])
@@ -408,9 +454,12 @@ def process_GITT(GITT_data,settings):
         }
     GITT_refined = []
     
-    V_mol = M/rho
     off = 0
-    for i, on in enumerate(current_on):    
+    for i, on in enumerate(current_on):   
+        # discard the first cycle
+        if i == 0:
+            continue
+        
         # determines the next point after on at which current is turned off
         relax = x[on]-x[off]
         for off in current_off:
@@ -418,33 +467,62 @@ def process_GITT(GITT_data,settings):
                 break
         
         # determination of E1, E3, and tau
-        E1 = y[on]
-        E3 = y[off]
+        E1 = [0,0] # ERROR PENDING
+        E1[0] = y[on]
         tau = x[off]-x[on]
         
         # E4 requires logic to properly treat final titration
+        E4 = [0,0] # ERROR PENDING
         if i < len(current_on)-1:
-            E4 = y[current_on[i+1]]
+            E4[0] = y[current_on[i+1]]
         else:
-            E4 = y[-1]
+            E4[0] = y[-1]
             
         # E2 requires linear regression for sqrt-behavior while current is applied
         interval_x = []
         interval_y = []
+        test_x = []
         for j in range(on,off):#+int((on-off)/2),off):
-            interval_x.append(np.sqrt(x[j]))
-            interval_y.append(y[j])
+            if x[j]-x[on] > tau/2:
+                interval_x.append(np.sqrt(x[j]-x[on]))
+                test_x.append(x[j]-x[on])
+                interval_y.append(y[j])
         try:
             regress_param = linregress(interval_x,interval_y)
         except:
             continue
+        
+        # print(len(interval_x))
+        # for idx, i_x in enumerate(interval_x):
+        #     print(i_x,test_x[idx],interval_y[idx])
+        
         m = [regress_param.slope,regress_param.stderr]
         b = [regress_param.intercept,regress_param.intercept_stderr]
         
-        E2 = m[0]*np.sqrt(x[on]) + b[0]
+        E2 = [0,0]
+        E2[0] = b[0]
+        E2[1] = b[1]
         
-        if regress_param.rvalue**2 < 0.4:
+        if regress_param.rvalue**2 < 0.99:
             bad_fit += 1
+        
+        E3 = [0,0]
+        E3[0] = m[0] * np.sqrt(tau) + b[0]
+        E3[1] = np.sqrt((m[1]*np.sqrt(tau))**2 + b[1]**2)
+        
+        # check if E2 is lower than E1 during charge or higher during discharge, set E2 to E1
+        if E2[0] < E3[0] and E2[0] < E1[0]:
+            E2[0] = E1[0]
+            E2 = E1
+            bad_expol += 1
+        elif E2[0] > E3[0] and E2[0] > E1[0]:
+            E2 = E1
+            bad_expol += 1
+        
+        # print(E3,m,b)
+        
+        # if i ==2:
+        #     sys.exit()
         
         GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2,relax)) # required for plotting
         
@@ -458,9 +536,24 @@ def process_GITT(GITT_data,settings):
         D_out['volt'].append(y[current_on[i]])
         
         # calculation of the diffusion constants
-        dE_s = E4-E1
-        dE_t = E3-E2
-        D = 4/(np.pi*tau) * (m_AM * V_mol/(M*A))**2 * ((dE_s)/(dE_t))**2
+        dE_s = E4[0]-E1[0]
+        dE_t = E3[0]-E2[0]
+        
+        D = [0,0]
+        D[0] = 4/(np.pi*tau) * (p_val['m_AM'][0] * p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2 * ((dE_s)/(dE_t))**2
+        
+        pf = 8/(np.pi*tau)
+        d_A = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['M_AM'][0])**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
+        d_A *= p_val['A'][1]
+        
+        tmp = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2*((dE_s)/(dE_t))**2/dE_t
+        d_E2 = tmp*E2[1]
+        d_E3 = tmp*E3[1]
+
+        
+        D[1] = np.sqrt(d_A**2+d_E2**2+d_E3**2)
+        
+        # PARTIAL ERROR
         D_out['diff'].append(D) 
     
     # check whether there is issues with the titration lengths
@@ -546,33 +639,42 @@ class plot_window:
         ax = fig.add_subplot()
         
         colors = ['green','blue','red']
-        alphas = [1.0,1.0,1.0]
+        alphas = [1.0,1.0,1.0,1.0]
         labels = ['E1','E2','E3']
         props = dict(boxstyle='round', facecolor='white', alpha=0.5)
         for i in range(3):
-            tmp = [[],[]]
+            tmp = [[],[],[]]
             for result in self.refined:
-                tmp[0].append(result[i+5])
-                tmp[1].append(result[i])
-                # if i == 1:
-                    # ax.text(result[i+5],result[i],'R²:{:.3f}'.format(result[8]),bbox=props)
+                # print(result)
+                if i < 3:
+                    tmp[0].append(result[i+5])
+                    tmp[1].append(result[i][0])
+                    tmp[2].append(result[i][1])
+                else:
+                    tmp[0].append(result[i+4])
+                    tmp[1].append(result[-1])
+                    tmp[2].append(0)
+                # if i == 0:
+                #     ax.text(result[i+5],result[i],'R²:{:.3f}'.format(result[8]),bbox=props)
                     
             ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
+            ax.errorbar(tmp[0],tmp[1],xerr=0,yerr=tmp[2],fmt='none',color=colors[i])
             
         ax.plot(self.data['time'],self.data['volt'],linestyle='-',label='E',marker='x')
         plt.xticks(fontsize=fs)
         plt.yticks(fontsize=fs)
         
         ax2 = ax.twinx()
-        ax2.scatter(self.D['time'],self.D['diff'],color='black',marker='+',label='D')
+        ax2.scatter(self.D['time'],[x[0] for x in self.D['diff']],color='black',marker='+',label='D')
+        ax2.errorbar(self.D['time'],[x[0] for x in self.D['diff']],xerr=0,yerr=[x[1] for x in self.D['diff']],fmt='none',color='black')
         
         h1, l1 = ax.get_legend_handles_labels()
         h2, l2 = ax2.get_legend_handles_labels()
         ax2.legend(h1+h2, l1+l2,loc=1,fontsize=fs)
         
         ax2.set_yscale('log')
-        ylim2_max = max(self.D['diff'])*5
-        ylim2_min = min(self.D['diff'])/5
+        ylim2_max = max([x[0] for x in self.D['diff']])*5
+        ylim2_min = min([x[0] for x in self.D['diff']])/5
         ax2.set_ylim(ylim2_min,ylim2_max)
         plt.yticks(fontsize=fs)
         
@@ -597,7 +699,7 @@ Function to streamline the creation of the labeled entries
 '''
 class labeled_entry:
      
-     def __init__(self, parent_frame, pos, label, init_value):
+     def __init__(self, parent_frame, pos, label, init_value, b_error=False):
          
          self._frame = tk.Frame(parent_frame)
          self._frame.grid(row=pos,column=0)
@@ -606,20 +708,39 @@ class labeled_entry:
          self._label['text'] = label[0]
          self._label.grid(row=0,column=0)
          
-         self._altlabel = ttk.Label(self._frame,width=8)
-         self._altlabel['text'] = ' '+label[1]
-         self._altlabel.grid(row=0,column=2)
+         self.value = [tk.StringVar(),tk.StringVar()]
          
-         self.value = tk.StringVar()
-         self.entry = ttk.Entry(
+         self.entry_main = ttk.Entry(
              self._frame,
-             textvariable=self.value,
+             textvariable=self.value[0],
              width=12,
              justify='right'
          )
-         self.entry.insert(0, init_value)
+         self.entry_main.insert(0, init_value)
+         self.entry_main.grid(row=0,column=1) 
+         
+         self._altlabel = ttk.Label(self._frame,width=8)
+         self._altlabel['text'] = ' '+label[1]
+         
+         if b_error:
+             self._label_error = ttk.Label(self._frame)
+             self._label_error['text'] = '+/-'
+             self._label_error.grid(row=0,column=2)
+             
+             self.entry_error = ttk.Entry(
+                 self._frame,
+                 textvariable=self.value[1],
+                 width=6,
+                 justify='right'
+             )
+             self.entry_error.insert(0, 0)
+             self.entry_error.grid(row=0,column=3) 
+             
+             self._altlabel.grid(row=0,column=4)
+         else:
+            self._altlabel.grid(row=0,column=2)
 
-         self.entry.grid(row=0,column=1) 
+         
 
 '''
 Creates the main window for loading and saving data
@@ -629,7 +750,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.8.0'
+        self.version = '0.9.0'
         self.icon = ''
         
         self.raw_file = None
@@ -667,31 +788,36 @@ class main_window:
             self.frame_entry_fields, 
             pos = 1, 
             label = ['m/A','mg/cm²'], 
-            init_value = 1)
+            init_value = 5,
+            b_error = True)
         
         self.settings['M_AM'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 2, 
             label = ['M','g/mol'], 
-            init_value = 13)
+            init_value = 100,
+            b_error = True)
         
         self.settings['rho'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 3, 
             label = ['ρ','g/cm³'], 
-            init_value = 55)
+            init_value = 4,
+            b_error = True)
         
-        self.settings['theocap'] = labeled_entry(
+        self.settings['refcap'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 4, 
             label = ['ref cap.','mAh/g'], 
-            init_value = 100)
+            init_value = 150,
+            b_error = True)
         
         self.settings['c0'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 5, 
             label = ['c_0 (ion)',''], 
-            init_value = 1.0)
+            init_value = 1.0,
+            b_error = True)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
                                       text = 'Properties Measurement')
@@ -701,7 +827,8 @@ class main_window:
             self.frame_entry_fields, 
             pos = 7, 
             label = ['A_cont','cm²'], 
-            init_value = 1.25)
+            init_value = 1.25,
+            b_error = True)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
                                       text = 'Settings Analysis')
@@ -821,16 +948,19 @@ class main_window:
         '''
         def fetch_GITT_settings():
             
-            number_settings = ['theocap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
+            number_settings = ['refcap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
             settings_file = self.raw_file.split('.')[0]+'.info'
             if os.path.isfile(settings_file):
                 with open(settings_file, mode='r') as f:
                     for line in f.readlines():
                         for item in number_settings:
-                            if line.split()[0] == item:
-                                self.settings[item].entry.delete(0,tk.END)
-                                self.settings[item].entry.insert(0, float(line.split()[1]))
-        
+                            if line.split(',')[0] == item:
+                                self.settings[item].entry_main.delete(0,tk.END)
+                                self.settings[item].entry_main.insert(0, float(line.split(',')[1]))
+                                if not item in ['scale','limiter']:
+                                    self.settings[item].entry_error.delete(0,tk.END)
+                                    self.settings[item].entry_error.insert(0, float(line.split(',')[2]))
+    
         '''
         This function imports raw GITT data.
         '''
