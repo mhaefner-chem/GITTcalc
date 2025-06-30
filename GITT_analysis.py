@@ -83,7 +83,7 @@ def write_GITT_settings(settings_file, settings):
         for item in number_settings:  
             value = settings[item].entry_main.get()
 
-            if not item in ['scale','limiter']:
+            if not item in blacklist_param:
                 value += ','
                 value += settings[item].entry_error.get()
 
@@ -964,7 +964,7 @@ class main_window:
                             if line.split(',')[0] == item:
                                 self.settings[item].entry_main.delete(0,tk.END)
                                 self.settings[item].entry_main.insert(0, float(line.split(',')[1]))
-                                if not item in ['scale','limiter']:
+                                if not item in blacklist_param:
                                     self.settings[item].entry_error.delete(0,tk.END)
                                     self.settings[item].entry_error.insert(0, float(line.split(',')[2]))
     
@@ -1189,5 +1189,8 @@ if __name__ == '__main__':
     from tkinter import filedialog as fd
     from tkinter import messagebox
     import os
+    
+    global blacklist_param
+    blacklist_param = ['scale','limiter','refcap','c0']
     
     main = main_window()
