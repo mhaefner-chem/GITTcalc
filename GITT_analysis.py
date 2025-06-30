@@ -467,12 +467,12 @@ def process_GITT(GITT_data,settings):
                 break
         
         # determination of E1, E3, and tau
-        E1 = [0,0] # ERROR PENDING
+        E1 = [0,0] # currently no error evaluated
         E1[0] = y[on]
         tau = x[off]-x[on]
         
         # E4 requires logic to properly treat final titration
-        E4 = [0,0] # ERROR PENDING
+        E4 = [0,0] # currently no error evaluated
         if i < len(current_on)-1:
             E4[0] = y[current_on[i+1]]
         else:
@@ -491,10 +491,7 @@ def process_GITT(GITT_data,settings):
             regress_param = linregress(interval_x,interval_y)
         except:
             continue
-        
-        # print(len(interval_x))
-        # for idx, i_x in enumerate(interval_x):
-        #     print(i_x,test_x[idx],interval_y[idx])
+    
         
         m = [regress_param.slope,regress_param.stderr]
         b = [regress_param.intercept,regress_param.intercept_stderr]
@@ -518,11 +515,7 @@ def process_GITT(GITT_data,settings):
         elif E2[0] > E3[0] and E2[0] > E1[0]:
             E2 = E1
             bad_expol += 1
-        
-        # print(E3,m,b)
-        
-        # if i ==2:
-        #     sys.exit()
+
         
         GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2,relax)) # required for plotting
         
@@ -542,7 +535,19 @@ def process_GITT(GITT_data,settings):
         D = [0,0]
         D[0] = 4/(np.pi*tau) * (p_val['m_AM'][0] * p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2 * ((dE_s)/(dE_t))**2
         
+        # errors: m_AM, V_mol, M_AM, A, E2, E3
+        
         pf = 8/(np.pi*tau)
+        d_m_AM = 2*p_val['m_AM'][0] * pf*(p_val['V_mol'][0]/(p_val['A'][0]*p_val['M_AM'][0]))**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
+        d_m_AM *= p_val['m_AM'][1]
+        
+        d_V_mol = 2*p_val['V_mol'][0] * pf*(p_val['m_AM'][0]/(p_val['A'][0]*p_val['M_AM'][0]))**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
+        d_V_mol *= p_val['V_mol'][1]
+        
+        d_M_AM = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['A'][0])**2 * p_val['M_AM'][0]**-3*((dE_s)/(dE_t))**2
+        d_M_AM *= p_val['M_AM'][1]
+        
+        
         d_A = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['M_AM'][0])**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
         d_A *= p_val['A'][1]
         
@@ -551,7 +556,9 @@ def process_GITT(GITT_data,settings):
         d_E3 = tmp*E3[1]
 
         
-        D[1] = np.sqrt(d_A**2+d_E2**2+d_E3**2)
+        D[1] = np.sqrt(d_m_AM**2+d_V_mol**2+d_M_AM**2+d_A**2+d_E2**2+d_E3**2)
+        
+        
         
         # PARTIAL ERROR
         D_out['diff'].append(D) 
@@ -750,7 +757,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.0'
+        self.version = '0.9.1'
         self.icon = ''
         
         self.raw_file = None
@@ -810,14 +817,14 @@ class main_window:
             pos = 4, 
             label = ['ref cap.','mAh/g'], 
             init_value = 150,
-            b_error = True)
+            b_error = False)
         
         self.settings['c0'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 5, 
             label = ['c_0 (ion)',''], 
             init_value = 1.0,
-            b_error = True)
+            b_error = False)
         
         self.entries_title = tk.Label(self.frame_entry_fields,
                                       text = 'Properties Measurement')
