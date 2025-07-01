@@ -171,18 +171,19 @@ def write_GITT_2_origin(data_raw,data_out,settings):
     # worksheet for processed data
     wks_diff = book.add_sheet(name='diffusion_data')
     if settings['cap'] or settings['spec_cap']:
-        cols = 6
+        cols = 7
         half_cycle_label = []
         for value in data_out['cycle']:
             half_cycle_label.append(value + 1)
     else:
-        cols = 3
+        cols = 4
     wks_diff.cols = cols
     
     clm_info = [
         {'data':data_out['time'],'label':'Time','units':'s','comments':''},
         {'data':data_out['volt'],'label':'Voltage','units':'V','comments':''},
-        {'data':[x[0] for x in data_out['diff']],'label':'Diffusion Coefficient','units':'cm²/s','comments':''}, ### NO ERROR YET
+        {'data':[x[0] for x in data_out['diff']],'label':'Diffusion Coefficient','units':'cm²/s','comments':''}, 
+        {'data':[x[1] for x in data_out['diff']],'label':'ERROR Diffusion Coefficient','units':'cm²/s','comments':''}, 
         {'data':[x[0] for x in data_out['spec_cap']],'label':'Specific Capacity','units':'mAh/g','comments':''},
         {'data':[x[0] for x in data_out['ion']],'label':'Content Conducting Ion','units':'','comments':''},
         {'data':half_cycle_label,'label':'Half Cycle','units':'','comments':'odd cycles: charge, even cycles: discharge'}
@@ -246,13 +247,13 @@ def write_GITT_data(savefile,data_out,settings):
     
     with savefile as f:
         if settings['cap'] or settings['spec_cap']:            
-            f.write('{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','Cycle'))
+            f.write('{:16},{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','ERR_D/cm^2/s','Cycle'))
             for i,value in enumerate(data_out['diff']):
-                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['ion'][i][0],data_out['spec_cap'][i][0],data_out['diff'][i][0],data_out['cycle'][i])) ### NO ERROR YET
+                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['ion'][i][0],data_out['spec_cap'][i][0],data_out['diff'][i][0],data_out['diff'][i][1],data_out['cycle'][i]))
         else:
-            f.write('{:16},{:16},{:16}\n'.format('time/s','volt/V','D/cm^2/s'))
+            f.write('{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','D/cm^2/s','ERR_D/cm^2/s'))
             for i,value in enumerate(data_out['diff']):
-                f.write('{:16.10e},{:16.10e},{:16.10e}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['diff'][i]))
+                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['diff'][i][0],data_out['diff'][i][1]))
 
 
 # METHODS
@@ -331,7 +332,7 @@ def process_GITT(GITT_data,settings):
         
         return V_mol, V_mol_err
     
-    p_val['V_mol'] = calculate_m_AM(p_val['M_AM'],p_val['rho'])
+    p_val['V_mol'] = calculate_V_mol(p_val['M_AM'],p_val['rho'])
     
     
     
@@ -559,8 +560,6 @@ def process_GITT(GITT_data,settings):
         D[1] = np.sqrt(d_m_AM**2+d_V_mol**2+d_M_AM**2+d_A**2+d_E2**2+d_E3**2)
         
         
-        
-        # PARTIAL ERROR
         D_out['diff'].append(D) 
     
     # check whether there is issues with the titration lengths
@@ -757,7 +756,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.1'
+        self.version = '0.9.2'
         self.icon = ''
         
         self.raw_file = None
