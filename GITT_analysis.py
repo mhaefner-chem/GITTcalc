@@ -78,7 +78,7 @@ and reopening.
 '''
 def write_GITT_settings(settings_file, settings):
     
-    number_settings = ['refcap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
+    number_settings = ['refcap','m_AM','M_AM','rho','c0','A','scale','limiter']
     with open(settings_file, mode='w') as f:
         for item in number_settings:  
             value = settings[item].entry_main.get()
@@ -287,7 +287,7 @@ def process_GITT(GITT_data,settings):
     x = GITT_data['time']
     y = GITT_data['volt']
     
-    p_list = ['A','m_AM/A','M_AM','refcap','c0','rho','scale','limiter']
+    p_list = ['A','m_AM','M_AM','refcap','c0','rho','scale','limiter']
     p_val = {}
     
     for p_key in p_list:
@@ -310,17 +310,17 @@ def process_GITT(GITT_data,settings):
         x_cap = GITT_data['cap']
         settings['cap'] = True  
     
-    def calculate_m_AM(m_AM_A,A):
+    # def calculate_m_AM(m_AM_A,A):
         
-        m_AM = m_AM_A[0] * A[0] / 1000
+    #     m_AM = m_AM_A[0] * A[0] / 1000
         
-        d_m_AM_A = m_AM_A[1]/(1000*A[0])
-        d_A = A[1]*m_AM_A[0]/(1000*A[0]**2)        
-        m_AM_err = np.sqrt(d_A**2+d_m_AM_A**2)
+    #     d_m_AM_A = m_AM_A[1]/(1000*A[0])
+    #     d_A = A[1]*m_AM_A[0]/(1000*A[0]**2)        
+    #     m_AM_err = np.sqrt(d_A**2+d_m_AM_A**2)
         
-        return m_AM, m_AM_err
+    #     return m_AM, m_AM_err
     
-    p_val['m_AM'] = calculate_m_AM(p_val['m_AM/A'],p_val['A'])
+    # p_val['m_AM'] = calculate_m_AM(p_val['m_AM/A'],p_val['A'])
     
     def calculate_V_mol(M_AM,rho):
         
@@ -427,7 +427,10 @@ def process_GITT(GITT_data,settings):
         # detects positive derivative jump
         if y_deriv[i] > abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
             # switches meaning of jump depending of whether the cell is currently being charged or discharged
-            if len(current_on) == 0 or y[current_on[-1]] < y[i]:
+            if len(current_on) == 0 or y[current_on[-1]] < y[i]: #y_deriv[i] > 0: #
+                current_on.append(i)
+                on_times.append(x[i])
+            elif y_deriv[i] > 50*abs(y_deriv[current_off[-1]]):
                 current_on.append(i)
                 on_times.append(x[i])
             else:
@@ -436,9 +439,12 @@ def process_GITT(GITT_data,settings):
             load = True
         # detects negative derivative jump, same logic as for positive derivative jump but flipped
         elif y_deriv[i] < -abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
-            if len(current_on) == 0 or y[current_on[-1]] < y[i]:
+            if len(current_on) == 0 or y[current_on[-1]] < y[i]: #y_deriv[i] < 0: #
                 current_off.append(i)
                 off_times.append(x[i])
+            elif y_deriv[i] < -50*abs(y_deriv[current_off[-1]]):
+                current_on.append(i)
+                on_times.append(x[i])
             else:
                current_on.append(i)
                on_times.append(x[i])
@@ -679,8 +685,10 @@ class plot_window:
         ax2.legend(h1+h2, l1+l2,loc=1,fontsize=fs)
         
         ax2.set_yscale('log')
-        ylim2_max = max([x[0] for x in self.D['diff']])*5
-        ylim2_min = min([x[0] for x in self.D['diff']])/5
+        import numpy as np
+        filtered_D = np.ma.masked_invalid(self.D['diff'])
+        ylim2_max = max([x[0] for x in filtered_D])*5
+        ylim2_min = min([x[0] for x in filtered_D])/5
         ax2.set_ylim(ylim2_min,ylim2_max)
         plt.yticks(fontsize=fs)
         
@@ -756,7 +764,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.2'
+        self.version = '0.9.3'
         self.icon = ''
         
         self.raw_file = None
@@ -790,10 +798,10 @@ class main_window:
         
         
         
-        self.settings['m_AM/A'] = labeled_entry(
+        self.settings['m_AM'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 1, 
-            label = ['m/A','mg/cm²'], 
+            label = ['m','mg'], 
             init_value = 5,
             b_error = True)
         
@@ -906,7 +914,7 @@ class main_window:
             try:
                 import originpro as op
                 op.org_ver()
-                _button_save_GITT['state'] = 'disabled'
+                # _button_save_GITT['state'] = 'disabled'
             except:
                 pass
             
@@ -954,7 +962,7 @@ class main_window:
         '''
         def fetch_GITT_settings():
             
-            number_settings = ['refcap','m_AM/A','M_AM','rho','c0','A','scale','limiter']
+            number_settings = ['refcap','m_AM','M_AM','rho','c0','A','scale','limiter']
             settings_file = self.raw_file.split('.')[0]+'.info'
             if os.path.isfile(settings_file):
                 with open(settings_file, mode='r') as f:
@@ -1056,8 +1064,8 @@ Time/s,Ewe/V,Capacity/mA.h,SpecificCapacity/mA.h/g
 Capacity data is not required for analysis. Only time and voltage are required.
 
 Settings for analysis:
-m/A
-    area-normed mass of the active material in g/cm²
+m
+    mass of the active material in g/cm²
 M
     molar mass of the active material in g/mol
 ρ
