@@ -764,7 +764,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.3'
+        self.version = '0.9.4'
         self.icon = ''
         
         self.raw_file = None
@@ -774,7 +774,7 @@ class main_window:
                 
         self.settings = {}
         
-        self.root = create_window('450x550+120+120','GITT Analysis')
+        self.root = create_window('450x550+120+120','GITTcalc')
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
         self.frame_buttons()
@@ -1088,7 +1088,7 @@ limiter (regular range: 0.02-0.05)
     
 Processed data is saved in CSV format.
 If program is run in OriginLab either via
-    run -pyf GITT_analysis.py
+    run -pyf GITTcalc.py
 or via the OPX file, the results are automatically filled into a new workbook upon analysis.
 If program is run as standalone, results are automatically plotted upon analysis.
 '''
@@ -1109,9 +1109,9 @@ If program is run as standalone, results are automatically plotted upon analysis
         def about():
             about_frame = create_window('850x600+120+120', 'About BondFinder',self.icon)
             about_frame.config(bg='#FFFFFF')
-            message ='''GITT_analysis, version {}
+            message ='''GITTcalc, version {}
             
-GITT_analysis analyzes raw GITT data to extract the diffusion coefficients of the conducting ion based on the mini-review 'Principle and Applications of Galvanostatic Intermittent Titration Technique for Lithium-ion Batteries' by Jaeyoung Kim, Sangbin Park, Sunhyun Hwang, and Won-Sub Yoon. (DOI: https://doi.org/10.33961/jecst.2021.00836) and equation 16, in particular.
+GITTcalc analyzes raw GITT data to extract the diffusion coefficients of the conducting ion based on the mini-review 'Principle and Applications of Galvanostatic Intermittent Titration Technique for Lithium-ion Batteries' by Jaeyoung Kim, Sangbin Park, Sunhyun Hwang, and Won-Sub Yoon. (DOI: https://doi.org/10.33961/jecst.2021.00836) and equation 16, in particular.
 
 MIT License
 Copyright (c) 2025 mhaefner-chem
