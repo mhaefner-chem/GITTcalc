@@ -39,13 +39,14 @@ def get_GITT_data(file):
                 for item in line.split(splitter):
                     item = item.split('\n')[0]
                     label = item
-                    if item in ['Test Time (s)','time/s','Time (s)']:
+                    print(item.lower())
+                    if item.lower() in ['test time (s)','time/s','time (s)','time']:
                         label = 'time'
-                    elif item in ['Voltage (V)','Ewe/V']:
+                    elif item.lower() in ['voltage (v)','ewe/v','volt','voltage']:
                         label = 'volt'
-                    elif item in ['Capacity (mAh)','Capacity/mA.h','Capacity/mAh']:
+                    elif item.lower() in ['capacity (mah)','capacity/ma.h','capacity/mah','capacity','cap']:
                         label = 'cap'
-                    elif item in ['Specific Capacity (mAh/g)','SpecificCapacity/mA.h/g']:
+                    elif item.lower() in ['specific capacity (mah/g)','specificcapacity/ma.h/g','specific_capacity','spec_cap']:
                         label = 'spec_cap'
                         
                     data[label] = []
@@ -310,6 +311,9 @@ def process_GITT(GITT_data,settings):
         x_cap = GITT_data['cap']
         settings['cap'] = True  
     
+    p_val['m_AM'][0] = p_val['m_AM'][0]/ 1000
+    p_val['m_AM'][1] = p_val['m_AM'][1]/ 1000
+    
     # def calculate_m_AM(m_AM_A,A):
         
     #     m_AM = m_AM_A[0] * A[0] / 1000
@@ -348,6 +352,16 @@ def process_GITT(GITT_data,settings):
     # this logic works with regular output from a BioLogic cycler
     # i.e., capacity is reset to 0 for every new charge or discharge cycle
     # capacity only ever rises and never decreases
+    def calculate_x_ion(spec_cap,ref_cap,c0):
+        x_ion_value = -spec_cap[0]/ref_cap[0] + c0[0]
+                       
+        d_spec_cap = spec_cap[1]/ref_cap[0]
+        d_ref_cap = ref_cap[1]*spec_cap[0]/ref_cap[0]**2
+        d_c0 = c0[1]
+        x_ion_err = np.sqrt(d_spec_cap**2+d_ref_cap**2+d_c0**2)
+        
+        return [x_ion_value, x_ion_err]
+    
     if settings['cap']:
         for i, cap in enumerate(x_cap):
             y_cycle.append(current_cycle)
@@ -366,16 +380,6 @@ def process_GITT(GITT_data,settings):
                 spec_cap[0] = (ref_cap-cap)/p_val['m_AM'][0]
             spec_cap[1] = p_val['m_AM'][1]/p_val['m_AM'][0]**2
             x_spec_cap.append(spec_cap)
-            
-            def calculate_x_ion(spec_cap,ref_cap,c0):
-                x_ion_value = -spec_cap[0]/ref_cap[0] + c0[0]
-                               
-                d_spec_cap = spec_cap[1]/ref_cap[0]
-                d_ref_cap = ref_cap[1]*spec_cap[0]/ref_cap[0]**2
-                d_c0 = c0[1]
-                x_ion_err = np.sqrt(d_spec_cap**2+d_ref_cap**2+d_c0**2)
-                
-                return [x_ion_value, x_ion_err]
             
             x_ion.append(calculate_x_ion(spec_cap,p_val['refcap'],p_val['c0']))
             
@@ -695,7 +699,7 @@ class plot_window:
         ax.grid(zorder=-50,linestyle='--',alpha=0.66)
         ax.set_xlabel('Time t ($10^6$ s)',fontsize=fs) 
         ax.set_ylabel('Voltage E (V)',fontsize=fs)  
-        ax2.set_ylabel('Diffusion rate D ($10^{-9}$ cm²/s)',fontsize=fs) 
+        ax2.set_ylabel('Diffusion rate D (cm²/s)',fontsize=fs) 
         ax.set_title('GITT Plot\nDiffusion and Voltage against Time',fontsize=fs+4)
     
         # creates and places Tkinter canvas for the matplotlib figure
@@ -764,7 +768,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.4'
+        self.version = '0.9.5'
         self.icon = ''
         
         self.raw_file = None
