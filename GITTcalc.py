@@ -39,7 +39,6 @@ def get_GITT_data(file):
                 for item in line.split(splitter):
                     item = item.split('\n')[0]
                     label = item
-                    print(item.lower())
                     if item.lower() in ['test time (s)','time/s','time (s)','time']:
                         label = 'time'
                     elif item.lower() in ['voltage (v)','ewe/v','volt','voltage']:
@@ -51,6 +50,7 @@ def get_GITT_data(file):
                         
                     data[label] = []
                     labels.append(label)
+                print(labels)
             else:
                 for item_index, item in enumerate(line.split(splitter)):
                     if labels[item_index] in required:
@@ -184,11 +184,11 @@ def write_GITT_2_origin(data_raw,data_out,settings):
         {'data':data_out['time'],'label':'Time','units':'s','comments':''},
         {'data':data_out['volt'],'label':'Voltage','units':'V','comments':''},
         {'data':[x[0] for x in data_out['diff']],'label':'Diffusion Coefficient','units':'cm²/s','comments':''}, 
-        {'data':[x[1] for x in data_out['diff']],'label':'ERROR Diffusion Coefficient','units':'cm²/s','comments':''}, 
-        {'data':[x[0] for x in data_out['spec_cap']],'label':'Specific Capacity','units':'mAh/g','comments':''},
-        {'data':[x[0] for x in data_out['ion']],'label':'Content Conducting Ion','units':'','comments':''},
-        {'data':half_cycle_label,'label':'Half Cycle','units':'','comments':'odd cycles: charge, even cycles: discharge'}
-        ]
+        {'data':[x[1] for x in data_out['diff']],'label':'ERROR Diffusion Coefficient','units':'cm²/s','comments':''}]
+    if settings['cap'] or settings['spec_cap']:
+        clm_info.append({'data':[x[0] for x in data_out['spec_cap']],'label':'Specific Capacity','units':'mAh/g','comments':''})
+        clm_info.append({'data':[x[0] for x in data_out['ion']],'label':'Content Conducting Ion','units':'','comments':''})
+        clm_info.append({'data':half_cycle_label,'label':'Half Cycle','units':'','comments':'odd cycles: charge, even cycles: discharge'})
     
     for idx in range(cols):    
         wks_diff.from_list(idx,
@@ -314,18 +314,6 @@ def process_GITT(GITT_data,settings):
     p_val['m_AM'][0] = p_val['m_AM'][0]/ 1000
     p_val['m_AM'][1] = p_val['m_AM'][1]/ 1000
     
-    # def calculate_m_AM(m_AM_A,A):
-        
-    #     m_AM = m_AM_A[0] * A[0] / 1000
-        
-    #     d_m_AM_A = m_AM_A[1]/(1000*A[0])
-    #     d_A = A[1]*m_AM_A[0]/(1000*A[0]**2)        
-    #     m_AM_err = np.sqrt(d_A**2+d_m_AM_A**2)
-        
-    #     return m_AM, m_AM_err
-    
-    # p_val['m_AM'] = calculate_m_AM(p_val['m_AM/A'],p_val['A'])
-    
     def calculate_V_mol(M_AM,rho):
         
         V_mol = M_AM[0] / rho[0]
@@ -426,15 +414,25 @@ def process_GITT(GITT_data,settings):
     load = False
     bad_fit = 0
     bad_expol = 0    
+    n_datapoints = len(y_deriv)
     
     for i, value in enumerate(y_deriv):
+        
+        # section to make sure that the new y-value in the comparison is 60 s after the voltage jump after current application
+        # ensures that charge/discharge is recognized more accurately
+        delta_i = 1
+        delta_t = 0
+        while delta_t < 60:
+            if delta_i + i < n_datapoints:
+                delta_t = x[delta_i+i] - x[i]
+                delta_i += 1
+            else:
+                break
+            
         # detects positive derivative jump
         if y_deriv[i] > abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
             # switches meaning of jump depending of whether the cell is currently being charged or discharged
-            if len(current_on) == 0 or y[current_on[-1]] < y[i]: #y_deriv[i] > 0: #
-                current_on.append(i)
-                on_times.append(x[i])
-            elif y_deriv[i] > 50*abs(y_deriv[current_off[-1]]):
+            if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] > 0: #
                 current_on.append(i)
                 on_times.append(x[i])
             else:
@@ -443,12 +441,9 @@ def process_GITT(GITT_data,settings):
             load = True
         # detects negative derivative jump, same logic as for positive derivative jump but flipped
         elif y_deriv[i] < -abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
-            if len(current_on) == 0 or y[current_on[-1]] < y[i]: #y_deriv[i] < 0: #
+            if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] < 0: #
                 current_off.append(i)
                 off_times.append(x[i])
-            elif y_deriv[i] < -50*abs(y_deriv[current_off[-1]]):
-                current_on.append(i)
-                on_times.append(x[i])
             else:
                current_on.append(i)
                on_times.append(x[i])
@@ -502,7 +497,8 @@ def process_GITT(GITT_data,settings):
             regress_param = linregress(interval_x,interval_y)
         except:
             continue
-    
+        if any(np.isnan(regress_param)):
+            continue
         
         m = [regress_param.slope,regress_param.stderr]
         b = [regress_param.intercept,regress_param.intercept_stderr]
@@ -661,7 +657,6 @@ class plot_window:
         for i in range(3):
             tmp = [[],[],[]]
             for result in self.refined:
-                # print(result)
                 if i < 3:
                     tmp[0].append(result[i+5])
                     tmp[1].append(result[i][0])
@@ -670,8 +665,6 @@ class plot_window:
                     tmp[0].append(result[i+4])
                     tmp[1].append(result[-1])
                     tmp[2].append(0)
-                # if i == 0:
-                #     ax.text(result[i+5],result[i],'R²:{:.3f}'.format(result[8]),bbox=props)
                     
             ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
             ax.errorbar(tmp[0],tmp[1],xerr=0,yerr=tmp[2],fmt='none',color=colors[i])
@@ -768,7 +761,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.5'
+        self.version = '0.9.6'
         self.icon = ''
         
         self.raw_file = None
@@ -872,6 +865,7 @@ class main_window:
                 variable = self.settings['plot'], 
                 onvalue = True, 
                 offvalue = False)
+        _checkbt_plot.select()
         _checkbt_plot.grid(row=0,column=0,sticky='W')
         
         self.settings['timing'] = tk.BooleanVar()
@@ -1009,7 +1003,6 @@ class main_window:
         plots the D-t and V-t diagram for checking the sensibility of the results
         '''
         def try_process_GITT():
-            import sys
             if self.GITT_data == 0:
                 messagebox.showerror('No GITT data', 'No GITT data loaded!')
             else:                
@@ -1021,15 +1014,17 @@ class main_window:
                 try:
                     import originpro as op
                     op.org_ver()
-                    write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
-                    if self.settings['plot'].get():
-                        plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
-                    else:
-                        self.root.destroy()
-                        sys.exit()
+                    has_originpro = True
                 except:
-                    if self.settings['plot'].get():
-                        plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
+                    has_originpro = False
+                # print('Has originpro?:',has_originpro)
+                
+                if has_originpro:
+                    write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
+                
+                if self.settings['plot'].get():
+                    plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
+                
         '''
         This function handles GUI side of saving the processed GITT data.
         '''
