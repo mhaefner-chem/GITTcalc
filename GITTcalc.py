@@ -50,7 +50,6 @@ def get_GITT_data(file):
                         
                     data[label] = []
                     labels.append(label)
-                print(labels)
             else:
                 for item_index, item in enumerate(line.split(splitter)):
                     if labels[item_index] in required:
@@ -244,18 +243,42 @@ Format:
     datapoints are stored in lists:
     data_out[key] = []
 '''
-def write_GITT_data(savefile,data_out,settings):
+def write_GITT_data(savefile,data_out,settings,refinement_param):
     
     with savefile as f:
         if settings['cap'] or settings['spec_cap']:            
             f.write('{:16},{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','ERR_D/cm^2/s','Cycle'))
-            for i,value in enumerate(data_out['diff']):
-                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['ion'][i][0],data_out['spec_cap'][i][0],data_out['diff'][i][0],data_out['diff'][i][1],data_out['cycle'][i]))
+            for idx, value in enumerate(data_out['diff']):
+                f.write(
+                    '{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(
+                        data_out['time'][idx],
+                        data_out['volt'][idx],
+                        data_out['ion'][idx][0],
+                        data_out['spec_cap'][idx][0],
+                        data_out['diff'][idx][0],
+                        data_out['diff'][idx][1],
+                        data_out['cycle'][idx]))
         else:
             f.write('{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','D/cm^2/s','ERR_D/cm^2/s'))
-            for i,value in enumerate(data_out['diff']):
-                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e}\n'.format(data_out['time'][i],data_out['volt'][i],data_out['diff'][i][0],data_out['diff'][i][1]))
-
+            for idx, value in enumerate(data_out['diff']):
+                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e}\n'.format(
+                    data_out['time'][idx],
+                    data_out['volt'][idx],
+                    data_out['diff'][idx][0],
+                    data_out['diff'][idx][1]))
+    
+    # TODO fix or replace
+    with open('abc.csv','w') as f:
+        print(os.getcwd())
+        f.write('E1,D_E1,E2,D_E2,E3,D_E3,E4,D_E4,tau,t_on,t_on,t_off,R^2,t_relax\n')
+        for idx, item in enumerate(refinement_param):
+            for value in item:
+                try: 
+                    len(value)
+                    f.write('{},{},'.format(value[0],value[1]))
+                except:
+                    f.write('{},'.format(value))
+            f.write('\n')
 
 # METHODS
 '''
@@ -638,6 +661,8 @@ class plot_window:
         from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,  
         NavigationToolbar2Tk)
         import matplotlib as mpl
+        import numpy as np
+        from math import log10, floor
         
         plt.close('all')
         mpl.use('pgf')
@@ -645,9 +670,9 @@ class plot_window:
         mpl.use('ps')
         mpl.use('svg')
         
-        fs = 16
+        fs = 24
         
-        fig = plt.figure(figsize=(3,3), dpi=80)
+        fig = plt.figure(figsize=(2.5,2.5), dpi=300)
         ax = fig.add_subplot()
         
         colors = ['green','blue','red']
@@ -666,11 +691,21 @@ class plot_window:
                     tmp[1].append(result[-1])
                     tmp[2].append(0)
                     
-            ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],zorder=50,label=labels[i],alpha=alphas[i])
+            ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],s=100,zorder=50,label=labels[i],alpha=alphas[i])
             ax.errorbar(tmp[0],tmp[1],xerr=0,yerr=tmp[2],fmt='none',color=colors[i])
-            
-        ax.plot(self.data['time'],self.data['volt'],linestyle='-',label='E',marker='x')
-        plt.xticks(fontsize=fs)
+        
+        for result in self.refined:
+            if result[-2] < 0.99:
+                ax.text(result[6],result[1][0],'  R² {:6.4}'.format(result[-2]),
+                        ha='left', va='center',
+                        fontsize=fs,bbox=props)
+        
+          
+        ax.plot(self.data['time'],self.data['volt'],linestyle='-',label='E',marker='x',markersize=1)
+        
+        times = self.D['time']
+        x_max_tick = round(max(times), -int(floor(log10(max(times)))))
+        plt.xticks(np.arange(0, x_max_tick, x_max_tick/5),fontsize=fs)
         plt.yticks(fontsize=fs)
         
         ax2 = ax.twinx()
@@ -682,15 +717,19 @@ class plot_window:
         ax2.legend(h1+h2, l1+l2,loc=1,fontsize=fs)
         
         ax2.set_yscale('log')
-        import numpy as np
+        
         filtered_D = np.ma.masked_invalid(self.D['diff'])
         ylim2_max = max([x[0] for x in filtered_D])*5
         ylim2_min = min([x[0] for x in filtered_D])/5
         ax2.set_ylim(ylim2_min,ylim2_max)
+        
         plt.yticks(fontsize=fs)
         
+        
+        ax.xaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:.0f}"))
+
         ax.grid(zorder=-50,linestyle='--',alpha=0.66)
-        ax.set_xlabel('Time t ($10^6$ s)',fontsize=fs) 
+        ax.set_xlabel('Time t (s)',fontsize=fs) 
         ax.set_ylabel('Voltage E (V)',fontsize=fs)  
         ax2.set_ylabel('Diffusion rate D (cm²/s)',fontsize=fs) 
         ax.set_title('GITT Plot\nDiffusion and Voltage against Time',fontsize=fs+4)
@@ -761,7 +800,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.6'
+        self.version = '0.9.7'
         self.icon = ''
         
         self.raw_file = None
@@ -807,7 +846,7 @@ class main_window:
             pos = 2, 
             label = ['M','g/mol'], 
             init_value = 100,
-            b_error = True)
+            b_error = False)
         
         self.settings['rho'] = labeled_entry(
             self.frame_entry_fields, 
@@ -1006,7 +1045,7 @@ class main_window:
             if self.GITT_data == 0:
                 messagebox.showerror('No GITT data', 'No GITT data loaded!')
             else:                
-                self.D_data, GITT_extra = process_GITT(self.GITT_data,self.settings)
+                self.D_data, self.GITT_extra = process_GITT(self.GITT_data,self.settings)
                 self.frame_top_buttons.destroy()
                 top_buttons(self)
                 file = self.raw_file.split('.')[0]+'.info'
@@ -1023,7 +1062,7 @@ class main_window:
                     write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
                 
                 if self.settings['plot'].get():
-                    plot_window(self.GITT_data,GITT_extra,self.D_data,self.settings)
+                    plot_window(self.GITT_data,self.GITT_extra,self.D_data,self.settings)
                 
         '''
         This function handles GUI side of saving the processed GITT data.
@@ -1033,14 +1072,14 @@ class main_window:
                 messagebox.showerror('No GITT data', 'No GITT data loaded!')
                 return
             elif self.D_data == 0:
-                self.D_data, GITT_extra = process_GITT(self.GITT_data,self.settings)
+                self.D_data, self.GITT_extra = process_GITT(self.GITT_data,self.settings)
                 self.frame_top_buttons.destroy()
                 top_buttons(self)
             
             Files = [('CSV File', '*.csv'),
                 ('All Files', '*.*')]
             savefile = fd.asksaveasfile(filetypes = Files, defaultextension = Files)
-            write_GITT_data(savefile,self.D_data,self.settings)
+            write_GITT_data(savefile,self.D_data,self.settings,self.GITT_extra)
         
         '''
         This function handles the window containing an overview about the formatting of the raw GITT data input file and the meaning of the different required settings for processing.
@@ -1197,6 +1236,6 @@ if __name__ == '__main__':
     import os
     
     global blacklist_param
-    blacklist_param = ['scale','limiter','refcap','c0']
+    blacklist_param = ['scale','limiter','refcap','c0','M_AM']
     
     main = main_window()
