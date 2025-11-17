@@ -511,8 +511,8 @@ def process_GITT(GITT_data,settings):
         interval_x = []
         interval_y = []
         test_x = []
-        for j in range(on,off):#+int((on-off)/2),off):
-            if x[j]-x[on] > tau/2:
+        for j in range(on,off):
+            if x[j]-x[on] > tau/5:
                 interval_x.append(np.sqrt(x[j]-x[on]))
                 test_x.append(x[j]-x[on])
                 interval_y.append(y[j])
@@ -724,6 +724,7 @@ class plot_window:
         ax2.set_ylim(ylim2_min,ylim2_max)
         
         plt.yticks(fontsize=fs)
+        plt.tight_layout()
         
         
         ax.xaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:.0f}"))
@@ -800,7 +801,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.7'
+        self.version = '0.9.8'
         self.icon = ''
         
         self.raw_file = None
@@ -1056,7 +1057,6 @@ class main_window:
                     has_originpro = True
                 except:
                     has_originpro = False
-                # print('Has originpro?:',has_originpro)
                 
                 if has_originpro:
                     write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
