@@ -78,7 +78,7 @@ and reopening.
 '''
 def write_GITT_settings(settings_file, settings):
     
-    number_settings = ['refcap','m_AM','M_AM','rho','c0','A','scale','limiter']
+    number_settings = ['theocap','m_AM','M_AM','rho','c0','A','scale','limiter']
     with open(settings_file, mode='w') as f:
         for item in number_settings:  
             value = settings[item].entry_main.get()
@@ -266,19 +266,6 @@ def write_GITT_data(savefile,data_out,settings,refinement_param):
                     data_out['volt'][idx],
                     data_out['diff'][idx][0],
                     data_out['diff'][idx][1]))
-    
-    # TODO fix or replace
-    with open('abc.csv','w') as f:
-        print(os.getcwd())
-        f.write('E1,D_E1,E2,D_E2,E3,D_E3,E4,D_E4,tau,t_on,t_on,t_off,R^2,t_relax\n')
-        for idx, item in enumerate(refinement_param):
-            for value in item:
-                try: 
-                    len(value)
-                    f.write('{},{},'.format(value[0],value[1]))
-                except:
-                    f.write('{},'.format(value))
-            f.write('\n')
 
 # METHODS
 '''
@@ -311,7 +298,7 @@ def process_GITT(GITT_data,settings):
     x = GITT_data['time']
     y = GITT_data['volt']
     
-    p_list = ['A','m_AM','M_AM','refcap','c0','rho','scale','limiter']
+    p_list = ['A','m_AM','M_AM','theocap','c0','rho','scale','limiter']
     p_val = {}
     
     for p_key in p_list:
@@ -354,7 +341,7 @@ def process_GITT(GITT_data,settings):
     # calculate specific capacity, current cycle, and ion content at every given time
     charge = True
     current_cycle = 0 # charge-discharge cycle number
-    ref_cap = 0
+    theo_cap = 0
     max_cap = 0
     x_ion = []
     x_spec_cap = []
@@ -363,13 +350,13 @@ def process_GITT(GITT_data,settings):
     # this logic works with regular output from a BioLogic cycler
     # i.e., capacity is reset to 0 for every new charge or discharge cycle
     # capacity only ever rises and never decreases
-    def calculate_x_ion(spec_cap,ref_cap,c0):
-        x_ion_value = -spec_cap[0]/ref_cap[0] + c0[0]
+    def calculate_x_ion(spec_cap,theo_cap,c0):
+        x_ion_value = -spec_cap[0]/theo_cap[0] + c0[0]
                        
-        d_spec_cap = spec_cap[1]/ref_cap[0]
-        d_ref_cap = ref_cap[1]*spec_cap[0]/ref_cap[0]**2
+        d_spec_cap = spec_cap[1]/theo_cap[0]
+        d_theo_cap = theo_cap[1]*spec_cap[0]/theo_cap[0]**2
         d_c0 = c0[1]
-        x_ion_err = np.sqrt(d_spec_cap**2+d_ref_cap**2+d_c0**2)
+        x_ion_err = np.sqrt(d_spec_cap**2+d_theo_cap**2+d_c0**2)
         
         return [x_ion_value, x_ion_err]
     
@@ -380,19 +367,19 @@ def process_GITT(GITT_data,settings):
                 current_cycle += 1
                 if charge:
                     charge = False
-                    ref_cap = ref_cap+x_cap[i-1]
+                    theo_cap = theo_cap+x_cap[i-1]
                 else:
                     charge = True
-                    ref_cap = ref_cap-x_cap[i-1]
+                    theo_cap = theo_cap-x_cap[i-1]
             spec_cap = [0,0]
             if charge == True:
-                spec_cap[0] = (ref_cap+cap)/p_val['m_AM'][0]
+                spec_cap[0] = (theo_cap+cap)/p_val['m_AM'][0]
             else:
-                spec_cap[0] = (ref_cap-cap)/p_val['m_AM'][0]
+                spec_cap[0] = (theo_cap-cap)/p_val['m_AM'][0]
             spec_cap[1] = p_val['m_AM'][1]/p_val['m_AM'][0]**2
             x_spec_cap.append(spec_cap)
             
-            x_ion.append(calculate_x_ion(spec_cap,p_val['refcap'],p_val['c0']))
+            x_ion.append(calculate_x_ion(spec_cap,p_val['theocap'],p_val['c0']))
             
             
     elif settings['spec_cap']:
@@ -408,20 +395,20 @@ def process_GITT(GITT_data,settings):
                     current_cycle += 1
                     if charge:
                         charge = False
-                        ref_cap = ref_cap+max_cap  
+                        theo_cap = theo_cap+max_cap  
                     else:
                         charge = True
-                        ref_cap = ref_cap-max_cap
+                        theo_cap = theo_cap-max_cap
                     max_cap = 0
                 
                 spec_cap = [0,0]
                 if charge == True:
-                    spec_cap[0] = (ref_cap+raw_spec_cap[i])
+                    spec_cap[0] = (theo_cap+raw_spec_cap[i])
                 else:
-                    spec_cap[0] = (ref_cap-raw_spec_cap[i])
+                    spec_cap[0] = (theo_cap-raw_spec_cap[i])
                     
                 x_spec_cap.append(spec_cap) # cannot compute error without errors from measurement yet
-                x_ion.append(calculate_x_ion(spec_cap,p_val['refcap'],p_val['c0']))
+                x_ion.append(calculate_x_ion(spec_cap,p_val['theocap'],p_val['c0']))
 
     # get numerical derivative of voltage
     # cutoff determines minimum jump in derivative required for it to be counted
@@ -451,27 +438,30 @@ def process_GITT(GITT_data,settings):
                 delta_i += 1
             else:
                 break
-            
+        
+        if delta_i + i >= len(y_deriv):
+            continue
+        
         # detects positive derivative jump
+        # sets current activation time to step before jump (i-1)
         if y_deriv[i] > abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
             # switches meaning of jump depending of whether the cell is currently being charged or discharged
             if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] > 0: #
-                current_on.append(i)
-                on_times.append(x[i])
+                current_on.append(i-1)
+                on_times.append(x[i-1])
             else:
-               current_off.append(i)
-               off_times.append(x[i])
+               current_off.append(i-1)
+               off_times.append(x[i-1])
             load = True
         # detects negative derivative jump, same logic as for positive derivative jump but flipped
         elif y_deriv[i] < -abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
             if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] < 0: #
-                current_off.append(i)
-                off_times.append(x[i])
+                current_off.append(i-1)
+                off_times.append(x[i-1])
             else:
-               current_on.append(i)
-               on_times.append(x[i])
+               current_on.append(i-1)
+               on_times.append(x[i-1])
             load = False
-    
     # evaluate E1-E4, charging time tau
     D_out = {
         'ion':      [],
@@ -690,8 +680,10 @@ class plot_window:
                     tmp[0].append(result[i+4])
                     tmp[1].append(result[-1])
                     tmp[2].append(0)
-                    
-            ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],s=100,zorder=50,label=labels[i],alpha=alphas[i])
+                
+                size = 100
+                
+            ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],s=size,zorder=50,label=labels[i],alpha=alphas[i])
             ax.errorbar(tmp[0],tmp[1],xerr=0,yerr=tmp[2],fmt='none',color=colors[i])
         
         for result in self.refined:
@@ -801,7 +793,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '0.9.8'
+        self.version = '1.0.0'
         self.icon = ''
         
         self.raw_file = None
@@ -811,7 +803,7 @@ class main_window:
                 
         self.settings = {}
         
-        self.root = create_window('450x550+120+120','GITTcalc')
+        self.root = create_window('650x850+120+120','GITTcalc')
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
         self.frame_buttons()
@@ -856,7 +848,7 @@ class main_window:
             init_value = 4,
             b_error = True)
         
-        self.settings['refcap'] = labeled_entry(
+        self.settings['theocap'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 4, 
             label = ['ref cap.','mAh/g'], 
@@ -1000,7 +992,7 @@ class main_window:
         '''
         def fetch_GITT_settings():
             
-            number_settings = ['refcap','m_AM','M_AM','rho','c0','A','scale','limiter']
+            number_settings = ['theocap','m_AM','M_AM','rho','c0','A','scale','limiter']
             settings_file = self.raw_file.split('.')[0]+'.info'
             if os.path.isfile(settings_file):
                 with open(settings_file, mode='r') as f:
@@ -1112,7 +1104,7 @@ A_cont
     contact area for measurement in cm²
     
 With capacity data:
-ref cap.
+theo. cap.
     specific capacity at ion content 1, e.g., Li1NiO2 or Na1CoO2
 c_0
     actual starting ion content
@@ -1236,6 +1228,6 @@ if __name__ == '__main__':
     import os
     
     global blacklist_param
-    blacklist_param = ['scale','limiter','refcap','c0','M_AM']
+    blacklist_param = ['scale','limiter','theocap','c0','M_AM']
     
     main = main_window()
