@@ -153,7 +153,7 @@ def write_GITT_example():
 this function saves the raw and processed GITT data into a OriginLab workbook,
 carrying over the name of the original file as label
 '''
-def write_GITT_2_origin(data_raw,data_out,settings):
+def write_GITT_2_origin(data_raw,data_out,settings,refined):
     import originpro as op
     book = op.new_book(lname=settings['name'])
     
@@ -171,12 +171,17 @@ def write_GITT_2_origin(data_raw,data_out,settings):
     # worksheet for processed data
     wks_diff = book.add_sheet(name='diffusion_data')
     if settings['cap'] or settings['spec_cap']:
-        cols = 7
+        cols = 8
         half_cycle_label = []
         for value in data_out['cycle']:
             half_cycle_label.append(value + 1)
     else:
-        cols = 4
+        cols = 5
+        
+    r_2s = []
+    for result in refined:
+        r_2s.append(result[-2])
+        
     wks_diff.cols = cols
     
     clm_info = [
@@ -188,7 +193,7 @@ def write_GITT_2_origin(data_raw,data_out,settings):
         clm_info.append({'data':[x[0] for x in data_out['spec_cap']],'label':'Specific Capacity','units':'mAh/g','comments':''})
         clm_info.append({'data':[x[0] for x in data_out['ion']],'label':'Content Conducting Ion','units':'','comments':''})
         clm_info.append({'data':half_cycle_label,'label':'Half Cycle','units':'','comments':'odd cycles: charge, even cycles: discharge'})
-    
+    clm_info.append({'data':r_2s,'label':'Coefficient of Determination Fit','units':'','comments':'0.99 recommended as threshold'})
     for idx in range(cols):    
         wks_diff.from_list(idx,
                            clm_info[idx]['data'],
@@ -243,29 +248,36 @@ Format:
     datapoints are stored in lists:
     data_out[key] = []
 '''
-def write_GITT_data(savefile,data_out,settings,refinement_param):
+def write_GITT_data(savefile,data_out,settings,refined):
     
     with savefile as f:
         if settings['cap'] or settings['spec_cap']:            
-            f.write('{:16},{:16},{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','ERR_D/cm^2/s','Cycle'))
+            f.write('{:16},{:16},{:16},{:16},{:16},{:16},{:16},{:16}\n'
+                    .format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','ERR_D/cm^2/s','Cycle','R^2'))
             for idx, value in enumerate(data_out['diff']):
                 f.write(
-                    '{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4}\n'.format(
+                    '{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4},{:16.10e}\n'.format(
                         data_out['time'][idx],
                         data_out['volt'][idx],
                         data_out['ion'][idx][0],
                         data_out['spec_cap'][idx][0],
                         data_out['diff'][idx][0],
                         data_out['diff'][idx][1],
-                        data_out['cycle'][idx]))
+                        data_out['cycle'][idx],
+                        refined[idx][-2]
+                        )
+                    )
         else:
-            f.write('{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','D/cm^2/s','ERR_D/cm^2/s'))
+            f.write('{:16},{:16},{:16},{:16},{:16}\n'.format('time/s','volt/V','D/cm^2/s','ERR_D/cm^2/s','R^2'))
             for idx, value in enumerate(data_out['diff']):
-                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e}\n'.format(
+                f.write('{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e}\n'.format(
                     data_out['time'][idx],
                     data_out['volt'][idx],
                     data_out['diff'][idx][0],
-                    data_out['diff'][idx][1]))
+                    data_out['diff'][idx][1],
+                    refined[idx][-2]
+                    )
+                )
 
 # METHODS
 '''
@@ -686,11 +698,15 @@ class plot_window:
             ax.scatter(tmp[0],tmp[1],marker='x',color=colors[i],s=size,zorder=50,label=labels[i],alpha=alphas[i])
             ax.errorbar(tmp[0],tmp[1],xerr=0,yerr=tmp[2],fmt='none',color=colors[i])
         
+        color = []
         for result in self.refined:
             if result[-2] < 0.99:
                 ax.text(result[6],result[1][0],'  R² {:6.4}'.format(result[-2]),
                         ha='left', va='center',
                         fontsize=fs,bbox=props)
+                color.append('red')
+            else:
+                color.append('black')
         
           
         ax.plot(self.data['time'],self.data['volt'],linestyle='-',label='E',marker='x',markersize=1)
@@ -701,8 +717,10 @@ class plot_window:
         plt.yticks(fontsize=fs)
         
         ax2 = ax.twinx()
-        ax2.scatter(self.D['time'],[x[0] for x in self.D['diff']],color='black',marker='+',label='D')
-        ax2.errorbar(self.D['time'],[x[0] for x in self.D['diff']],xerr=0,yerr=[x[1] for x in self.D['diff']],fmt='none',color='black')
+        
+
+        ax2.scatter(self.D['time'],[x[0] for x in self.D['diff']],color=color,marker='+',label='D')
+        ax2.errorbar(self.D['time'],[x[0] for x in self.D['diff']],xerr=0,yerr=[x[1] for x in self.D['diff']],ecolor=color,fmt='none')
         
         h1, l1 = ax.get_legend_handles_labels()
         h2, l2 = ax2.get_legend_handles_labels()
@@ -794,7 +812,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '1.0.1'
+        self.version = '1.0.2'
         self.icon = ''
         
         self.raw_file = None
@@ -1052,7 +1070,7 @@ class main_window:
                     has_originpro = False
                 
                 if has_originpro:
-                    write_GITT_2_origin(self.GITT_data,self.D_data,self.settings)
+                    write_GITT_2_origin(self.GITT_data,self.D_data,self.settings,self.GITT_extra)
                 
                 if self.settings['plot'].get():
                     plot_window(self.GITT_data,self.GITT_extra,self.D_data,self.settings)
