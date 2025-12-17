@@ -747,7 +747,7 @@ class labeled_entry:
          self._frame = tk.Frame(parent_frame)
          self._frame.grid(row=pos,column=0)
          
-         self._label = ttk.Label(self._frame,width=8)
+         self._label = ttk.Label(self._frame,width=10,anchor='e')
          self._label['text'] = label[0]
          self._label.grid(row=0,column=0)
          
@@ -781,8 +781,9 @@ class labeled_entry:
              
              self._altlabel.grid(row=0,column=4)
          else:
+            self._altlabel['text'] += '      '
             self._altlabel.grid(row=0,column=2)
-
+            
          
 
 '''
@@ -793,7 +794,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '1.0.0'
+        self.version = '1.0.1'
         self.icon = ''
         
         self.raw_file = None
@@ -803,7 +804,7 @@ class main_window:
                 
         self.settings = {}
         
-        self.root = create_window('650x850+120+120','GITTcalc')
+        self.root = create_window('450x450+120+120','GITTcalc')
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
         self.frame_buttons()
@@ -851,7 +852,7 @@ class main_window:
         self.settings['theocap'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 4, 
-            label = ['ref cap.','mAh/g'], 
+            label = ['theo. cap.','mAh/g'], 
             init_value = 150,
             b_error = False)
         
