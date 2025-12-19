@@ -1,5 +1,5 @@
 # GITTcalc
-![GitHub Release](https://img.shields.io/github/v/release/mhaefner-chem/GITT_Analysis?include_prereleases) ![GitHub License](https://img.shields.io/github/license/mhaefner-chem/GITT_Analysis)
+![GitHub Release](https://img.shields.io/github/v/release/mhaefner-chem/GITT_Analysis?include_prereleases) ![GitHub License](https://img.shields.io/github/license/mhaefner-chem/GITT_Analysis) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17986238.svg)](https://doi.org/10.5281/zenodo.17986238)
 
 GITTcalc analyzes raw GITT data to extract the diffusion coefficients of the conducting ion based on the mini-review 'Principle and Applications of Galvanostatic Intermittent Titration Technique for Lithium-ion Batteries' by Jaeyoung Kim, Sangbin Park, Sunhyun Hwang, and Won-Sub Yoon. (DOI: https://doi.org/10.33961/jecst.2021.00836) and equation 16, in particular. It can either be used as a standalone program or inside OriginLab.
 
