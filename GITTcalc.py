@@ -251,12 +251,33 @@ Format:
 def write_GITT_data(savefile,data_out,settings,refined):
     
     with savefile as f:
-        if settings['cap'] or settings['spec_cap']:            
-            f.write('{:16},{:16},{:16},{:16},{:16},{:16},{:16},{:16}\n'
-                    .format('time/s','volt/V','x_ion','SpecCap/mAh/g','D/cm^2/s','ERR_D/cm^2/s','Cycle','R^2'))
+        if settings['cap'] or settings['spec_cap']:
+            entries = ['time/s',
+                       'volt/V',
+                       'x_ion',
+                       'SpecCap/mAh/g',
+                       'D/cm^2/s',
+                       'ERR_D/cm^2/s',
+                       'Cycle',
+                       'R^2',
+                       'E1/V',
+                       'SD_E1/V',
+                       'E2/V',
+                       'SD_E2/V',
+                       'E3/V',
+                       'SD_E3/V',
+                       'E4/V',
+                       'SD_E4/V',]
+            
+            string = ''
+            for entry in entries:
+                string += '{:16},'.format(entry)
+            string += '\n'
+                
+            f.write(string)
             for idx, value in enumerate(data_out['diff']):
                 f.write(
-                    '{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4},{:16.10e}\n'.format(
+                    '{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:4},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e},{:16.10e}\n'.format(
                         data_out['time'][idx],
                         data_out['volt'][idx],
                         data_out['ion'][idx][0],
@@ -264,7 +285,15 @@ def write_GITT_data(savefile,data_out,settings,refined):
                         data_out['diff'][idx][0],
                         data_out['diff'][idx][1],
                         data_out['cycle'][idx],
-                        refined[idx][-2]
+                        refined[idx][-2],
+                        refined[idx][0][0],
+                        refined[idx][0][1],
+                        refined[idx][1][0],
+                        refined[idx][1][1],
+                        refined[idx][2][0],
+                        refined[idx][2][1],
+                        refined[idx][3][0],
+                        refined[idx][3][1]
                         )
                     )
         else:
@@ -812,7 +841,7 @@ class main_window:
     # initializes the base window
     def __init__(self):
         
-        self.version = '1.0.2'
+        self.version = '1.0.3'
         self.icon = ''
         
         self.raw_file = None
