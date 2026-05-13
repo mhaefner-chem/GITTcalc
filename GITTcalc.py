@@ -619,10 +619,11 @@ def process_GITT(GITT_data,settings):
                         interval_y.append(y[j])
     
                 regress_param, skip = do_lin_regress(interval_x,interval_y)
+                m = [regress_param.slope,regress_param.stderr] 
             if skip:
                 continue
             
-            m = [regress_param.slope,regress_param.stderr] 
+           
     
             GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2,relax)) # required for plotting
             
@@ -645,13 +646,14 @@ def process_GITT(GITT_data,settings):
             prefac = 4/(np.pi*tau) * (p_val['m_AM'][0] * p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2
 
             if do_relax:
-                # diffusion coefficient calculation according to old approach via potential under current
-                potentials = (dE_s)/(dE_t)
-            else:
                 # diffusion coefficient calculation according to new approach via potential during relaxation        
                 potentials = dE_s/m[0]
+            else:
+                # diffusion coefficient calculation according to old approach via potential under current
+                potentials = dE_s/dE_t
+                
             
-            D[0] = prefac * potentials**2           
+            D[0] = prefac * potentials**2        
             
             # errors: m_AM, V_mol, M_AM, A, E2, E3
             
