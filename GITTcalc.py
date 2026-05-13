@@ -335,6 +335,9 @@ def process_GITT(GITT_data,settings):
     import numpy as np
     from scipy.stats import linregress
     
+    print(settings['new_method'].get())
+    do_relax = settings['new_method'].get()
+    
     # initial data transformation, time as x-axis, voltage as y-axis
     x = GITT_data['time']
     y = GITT_data['volt']
@@ -450,215 +453,300 @@ def process_GITT(GITT_data,settings):
                     
                 x_spec_cap.append(spec_cap) # cannot compute error without errors from measurement yet
                 x_ion.append(calculate_x_ion(spec_cap,p_val['theocap'],p_val['c0']))
-
-    # get numerical derivative of voltage
-    # cutoff determines minimum jump in derivative required for it to be counted
-    y_deriv = get_numerical_derivative(x, y)
-    y_deriv_cutoff = p_val['limiter'][0]*np.mean(list(map(abs, y_deriv)))
-
-    # this part detects when the current is applied and removed
-    # makes this less dependent on format of GITT data
-    current_on = []
-    current_off = []
-    on_times = []
-    off_times = []
-    load = False
-    bad_fit = 0
-    bad_expol = 0    
-    n_datapoints = len(y_deriv)
     
-    for i, value in enumerate(y_deriv):
-        
-        # section to make sure that the new y-value in the comparison is 60 s after the voltage jump after current application
-        # ensures that charge/discharge is recognized more accurately
-        delta_i = 1
-        delta_t = 0
-        while delta_t < 60:
-            if delta_i + i < n_datapoints:
-                delta_t = x[delta_i+i] - x[i]
-                delta_i += 1
-            else:
-                break
-        
-        if delta_i + i >= len(y_deriv):
-            continue
-        
-        # detects positive derivative jump
-        # sets current activation time to step before jump (i-1)
-        if y_deriv[i] > abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
-            # switches meaning of jump depending of whether the cell is currently being charged or discharged
-            if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] > 0: #
-                current_on.append(i-1)
-                on_times.append(x[i-1])
-            else:
-               current_off.append(i-1)
-               off_times.append(x[i-1])
-            load = True
-        # detects negative derivative jump, same logic as for positive derivative jump but flipped
-        elif y_deriv[i] < -abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
-            if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] < 0: #
-                current_off.append(i-1)
-                off_times.append(x[i-1])
-            else:
-               current_on.append(i-1)
-               on_times.append(x[i-1])
-            load = False
-    # evaluate E1-E4, charging time tau
-    D_out = {
-        'ion':      [],
-        'spec_cap': [],
-        'cycle':    [],
-        'time':     [],
-        'volt':     [],
-        'diff':     []
-        }
-    GITT_refined = []
     
-    off = 0
-    for i, on in enumerate(current_on):   
-        # discard the first cycle
-        if i == 0:
-            continue
+    # this part repeats the fitting, trying to optimise the parameters
+    optimize_limiter = False
+    if p_val['limiter'][0] == -1:
+        p_val['limiter'][0] = 0.05
+        optimize_limiter = True
+    
+    optimize_scale = False
+    if p_val['scale'][0] == -1:
+        p_val['scale'][0] = 10
+        optimize_scale = True
         
-        # determines the next point after on at which current is turned off
-        relax = x[on]-x[off]
-        for off in current_off:
-            if off > on:
-                break
+    n_titrations_before = 0
+    
+    while True:
+        # get numerical derivative of voltage
+        # cutoff determines minimum jump in derivative required for it to be counted
+        y_deriv = get_numerical_derivative(x, y)
+        y_deriv_cutoff = p_val['limiter'][0]*np.mean(list(map(abs, y_deriv)))
+    
+        # this part detects when the current is applied and removed
+        # makes this less dependent on format of GITT data
+        current_on = []
+        current_off = []
+        on_times = []
+        off_times = []
+        load = False
+        bad_fit = 0
+        bad_expol = 0    
+        n_datapoints = len(y_deriv)
         
-        # determination of E1, E3, and tau
-        E1 = [0,0] # currently no error evaluated
-        E1[0] = y[on]
-        tau = x[off]-x[on]
-        
-        # E4 requires logic to properly treat final titration
-        E4 = [0,0] # currently no error evaluated
-        if i < len(current_on)-1:
-            E4[0] = y[current_on[i+1]]
-        else:
-            E4[0] = y[-1]
+        for i, value in enumerate(y_deriv):
             
-        # E2 requires linear regression for sqrt-behavior while current is applied
-        interval_x = []
-        interval_y = []
-        test_x = []
-        for j in range(on,off):
-            if x[j]-x[on] > tau/5:
-                interval_x.append(np.sqrt(x[j]-x[on]))
-                test_x.append(x[j]-x[on])
-                interval_y.append(y[j])
-        try:
-            regress_param = linregress(interval_x,interval_y)
-        except:
-            continue
-        if any(np.isnan(regress_param)):
-            continue
+            # section to make sure that the new y-value in the comparison is 60 s after the voltage jump after current application
+            # ensures that charge/discharge is recognized more accurately
+            delta_i = 1
+            delta_t = 0
+            while delta_t < 60:
+                if delta_i + i < n_datapoints:
+                    delta_t = x[delta_i+i] - x[i]
+                    delta_i += 1
+                else:
+                    break
+            
+            if delta_i + i >= len(y_deriv):
+                continue
+            
+            # detects positive derivative jump
+            # sets current activation time to step before jump (i-1)
+            if y_deriv[i] > abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] > y_deriv_cutoff and load == False:
+                # switches meaning of jump depending of whether the cell is currently being charged or discharged
+                if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] > 0: #
+                    current_on.append(i-1)
+                    on_times.append(x[i-1])
+                else:
+                   current_off.append(i-1)
+                   off_times.append(x[i-1])
+                load = True
+            # detects negative derivative jump, same logic as for positive derivative jump but flipped
+            elif y_deriv[i] < -abs(p_val['scale'][0]*y_deriv[i-1]) and y_deriv[i] < -y_deriv_cutoff and load == True:
+                if len(current_on) == 0 or y[current_on[-1]] < y[i+delta_i]: #y_deriv[i] < 0: #
+                    current_off.append(i-1)
+                    off_times.append(x[i-1])
+                else:
+                   current_on.append(i-1)
+                   on_times.append(x[i-1])
+                load = False
+        # evaluate E1-E4, charging time tau
+        D_out = {
+            'ion':      [],
+            'spec_cap': [],
+            'cycle':    [],
+            'time':     [],
+            'volt':     [],
+            'diff':     []
+            }
+        GITT_refined = []
         
-        m = [regress_param.slope,regress_param.stderr]
-        b = [regress_param.intercept,regress_param.intercept_stderr]
-        
-        E2 = [0,0]
-        E2[0] = b[0]
-        E2[1] = b[1]
-        
-        if regress_param.rvalue**2 < 0.99:
-            bad_fit += 1
-        
-        E3 = [0,0]
-        E3[0] = m[0] * np.sqrt(tau) + b[0]
-        E3[1] = np.sqrt((m[1]*np.sqrt(tau))**2 + b[1]**2)
-        
-        # check if E2 is lower than E1 during charge or higher during discharge, set E2 to E1
-        if E2[0] < E3[0] and E2[0] < E1[0]:
-            E2[0] = E1[0]
-            E2 = E1
-            bad_expol += 1
-        elif E2[0] > E3[0] and E2[0] > E1[0]:
-            E2 = E1
-            bad_expol += 1
-
-        
-        GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2,relax)) # required for plotting
-        
-        # collect data for output
-        if settings['cap'] or settings['spec_cap']:
-            # the +1 is a fix to properly process Arbin data
-            D_out['ion'].append(x_ion[current_on[i]+1])
-            D_out['spec_cap'].append(x_spec_cap[current_on[i]+1])
-            D_out['cycle'].append(y_cycle[current_on[i]+1])   
-        D_out['time'].append(x[current_on[i]])
-        D_out['volt'].append(y[current_on[i]])
-        
-        # calculation of the diffusion constants
-        dE_s = E4[0]-E1[0]
-        dE_t = E3[0]-E2[0]
-        
-        D = [0,0]
-        D[0] = 4/(np.pi*tau) * (p_val['m_AM'][0] * p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2 * ((dE_s)/(dE_t))**2
-        
-        # errors: m_AM, V_mol, M_AM, A, E2, E3
-        
-        pf = 8/(np.pi*tau)
-        d_m_AM = 2*p_val['m_AM'][0] * pf*(p_val['V_mol'][0]/(p_val['A'][0]*p_val['M_AM'][0]))**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
-        d_m_AM *= p_val['m_AM'][1]
-        
-        d_V_mol = 2*p_val['V_mol'][0] * pf*(p_val['m_AM'][0]/(p_val['A'][0]*p_val['M_AM'][0]))**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
-        d_V_mol *= p_val['V_mol'][1]
-        
-        d_M_AM = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['A'][0])**2 * p_val['M_AM'][0]**-3*((dE_s)/(dE_t))**2
-        d_M_AM *= p_val['M_AM'][1]
-        
-        
-        d_A = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['M_AM'][0])**2 * p_val['A'][0]**-3*((dE_s)/(dE_t))**2
-        d_A *= p_val['A'][1]
-        
-        tmp = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2*((dE_s)/(dE_t))**2/dE_t
-        d_E2 = tmp*E2[1]
-        d_E3 = tmp*E3[1]
-
-        
-        D[1] = np.sqrt(d_m_AM**2+d_V_mol**2+d_M_AM**2+d_A**2+d_E2**2+d_E3**2)
-        
-        
-        D_out['diff'].append(D) 
+        off = 0
+        for i, on in enumerate(current_on):   
+            # discard the first cycle
+            if i == 0:
+                continue
+            
+            # determines the next point after on at which current is turned off
+            relax = x[on]-x[off]
+            for off in current_off:
+                if off > on:
+                    break
+            
+            # determination of E1, E3, and tau
+            E1 = [0,0] # currently no error evaluated
+            E1[0] = y[on]
+            tau = x[off]-x[on]
+            
+            # E4 requires logic to properly treat final titration
+            E4 = [0,0] # currently no error evaluated
+            if i < len(current_on)-1:
+                E4[0] = y[current_on[i+1]]
+            else:
+                E4[0] = y[-1]
+                
+            # generate maximum boundary for relaxation-based approach
+            if do_relax:
+                if i < len(current_on)-1:
+                    x_max = current_on[i+1]
+                else:
+                    x_max = -1
+            
+            def do_lin_regress(x,y):
+                skip = False
+                try:
+                    regress = linregress(x,y)
+                except:
+                    skip = True
+                if any(np.isnan(regress)):
+                    skip = True
+                return regress, skip
+            
+            # E2 requires linear regression for sqrt-behavior while current is applied
+            interval_x = []
+            interval_y = []
+            for j in range(on,off):
+                if x[j]-x[on] > tau*0.2:
+                    interval_x.append(np.sqrt(x[j]-x[on]))
+                    interval_y.append(y[j])
+            
+            regress_param, skip = do_lin_regress(interval_x,interval_y)
+            if skip:
+                continue
+            
+            m = [regress_param.slope,regress_param.stderr]
+            b = [regress_param.intercept,regress_param.intercept_stderr]
+            
+            E2 = [0,0]
+            E2[0] = b[0]
+            E2[1] = b[1]
+            
+            if regress_param.rvalue**2 < 0.99:
+                bad_fit += 1
+            
+            E3 = [0,0]
+            E3[0] = m[0] * np.sqrt(tau) + b[0]
+            E3[1] = np.sqrt((m[1]*np.sqrt(tau))**2 + b[1]**2)
+            
+            # check if E2 is lower than E1 during charge or higher during discharge, set E2 to E1
+            if E2[0] < E3[0] and E2[0] < E1[0]:
+                E2[0] = E1[0]
+                E2 = E1
+                bad_expol += 1
+            elif E2[0] > E3[0] and E2[0] > E1[0]:
+                E2 = E1
+                bad_expol += 1
     
-    # check whether there is issues with the titration lengths
-    def evaluate_tau(taus,relaxes):
-        
-        buckets = [0,0,0]
-        tot_length = [0,0,0]
-        median_tau = np.median(taus)
-        median_rlx = np.median(relaxes)
-        
-        for tau in taus:
-            if tau > 0.95*median_tau and tau < 1.05*median_tau:
-                buckets[1] += 1
-                tot_length[1] += tau
-            elif tau > 1.05*median_tau:   
-                buckets[2] += 1
-                tot_length[2] += tau
-            elif tau < 0.95*median_tau:
-                buckets[0] += 1
-                tot_length[0] += tau
-        
-        if tot_length[2] > tot_length[1] or buckets[2] > 0.01*buckets[1]:
-            messagebox.showwarning('Check Results','A significant number of abnormally long titration cycles was obtained, indicating that the program failed to correctly identify all titration cycles. Please reduce the settings \'scale\' and \'limiter\'.')
-        
-        if median_tau > median_rlx/4:
-            messagebox.showwarning('Titration timings','''Titration duration
-Current applied for {:.2f} s
-Relaxing for {:.2f} s
-Relaxation time is relatively short compared to charging time. Make sure that the relaxation is sufficiently long!'''.format(median_tau,median_rlx))
-        elif settings['timing'].get():
-            messagebox.showinfo('Titration timings','''Titration duration
-Current applied for {:.2f} s
-Relaxing for {:.2f} s'''.format(median_tau,median_rlx))
-
-    evaluate_tau(list(zip(*GITT_refined))[4],list(zip(*GITT_refined))[9])
+            
+            # regression for relax approach
+            interval_x = []
+            interval_y = []
+            if do_relax:
+                for j in range(off,x_max):
+                    if x[x_max]-x[j] < tau:
+                        interval_x.append(np.sqrt(x[j]-x[off]+tau)-np.sqrt(x[j]-x[off]))
+                        interval_y.append(y[j])
     
-    if bad_fit > 0:
-        messagebox.showinfo('Check Results','The regression for determining the onset energy yielded a bad fit {} times. Please check the results for errors and outliers.'.format(bad_fit))
+                regress_param, skip = do_lin_regress(interval_x,interval_y)
+            if skip:
+                continue
+            
+            m = [regress_param.slope,regress_param.stderr] 
+    
+            GITT_refined.append((E1,E2,E3,E4,tau,x[on],x[on],x[off],regress_param.rvalue**2,relax)) # required for plotting
+            
+                   
+            
+            # collect data for output
+            if settings['cap'] or settings['spec_cap']:
+                # the +1 is a fix to properly process Arbin data
+                D_out['ion'].append(x_ion[current_on[i]+1])
+                D_out['spec_cap'].append(x_spec_cap[current_on[i]+1])
+                D_out['cycle'].append(y_cycle[current_on[i]+1])   
+            D_out['time'].append(x[current_on[i]])
+            D_out['volt'].append(y[current_on[i]])
+            
+            # calculation of the diffusion constants
+            dE_s = E4[0]-E1[0]
+            dE_t = E3[0]-E2[0]
+            
+            D = [0,0]
+            prefac = 4/(np.pi*tau) * (p_val['m_AM'][0] * p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2
 
+            if do_relax:
+                # diffusion coefficient calculation according to old approach via potential under current
+                potentials = (dE_s)/(dE_t)
+            else:
+                # diffusion coefficient calculation according to new approach via potential during relaxation        
+                potentials = dE_s/m[0]
+            
+            D[0] = prefac * potentials**2           
+            
+            # errors: m_AM, V_mol, M_AM, A, E2, E3
+            
+            pf = 8/(np.pi*tau)
+            d_m_AM = 2*p_val['m_AM'][0] * pf*(p_val['V_mol'][0]/(p_val['A'][0]*p_val['M_AM'][0]))**2 * p_val['A'][0]**-3*potentials**2
+            d_m_AM *= p_val['m_AM'][1]
+            
+            d_V_mol = 2*p_val['V_mol'][0] * pf*(p_val['m_AM'][0]/(p_val['A'][0]*p_val['M_AM'][0]))**2 * p_val['A'][0]**-3*potentials**2
+            d_V_mol *= p_val['V_mol'][1]
+            
+            d_M_AM = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['A'][0])**2 * p_val['M_AM'][0]**-3*potentials**2
+            d_M_AM *= p_val['M_AM'][1]
+            
+            
+            d_A = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/p_val['M_AM'][0])**2 * p_val['A'][0]**-3*potentials**2
+            d_A *= p_val['A'][1]
+            
+            if do_relax:
+                d_E2 = 0
+                d_E3 = 0
+            else:
+                tmp = pf*(p_val['m_AM'][0]*p_val['V_mol'][0]/(p_val['M_AM'][0]*p_val['A'][0]))**2*potentials**2/dE_t
+                d_E2 = tmp*E2[1]
+                d_E3 = tmp*E3[1]
+    
+            
+            D[1] = np.sqrt(d_m_AM**2+d_V_mol**2+d_M_AM**2+d_A**2+d_E2**2+d_E3**2)
+            
+            
+            D_out['diff'].append(D) 
+        
+        # check whether there is issues with the titration lengths
+        def evaluate_tau(taus,relaxes):
+            
+            buckets = [0,0,0]
+            tot_length = [0,0,0]
+            median_tau = np.median(taus)
+            median_rlx = np.median(relaxes)
+            result = 'FINE'
+            
+            for tau in taus:
+                if tau > 0.95*median_tau and tau < 1.05*median_tau:
+                    buckets[1] += 1
+                    tot_length[1] += tau
+                elif tau > 1.05*median_tau:   
+                    buckets[2] += 1
+                    tot_length[2] += tau
+                elif tau < 0.95*median_tau:
+                    buckets[0] += 1
+                    tot_length[0] += tau
+            
+            if tot_length[2] > tot_length[1] or buckets[2] > 0.01*buckets[1]:
+                #messagebox.showwarning('Check Results','A significant number of abnormally long titration cycles was obtained, indicating that the program failed to correctly identify all titration cycles. Please reduce the settings \'scale\' and \'limiter\'.')
+                result = 'LOWER'
+                
+    #         if median_tau > median_rlx/4:
+    #             messagebox.showwarning('Titration timings','''Titration duration
+    # Current applied for {:.2f} s
+    # Relaxing for {:.2f} s
+    # Relaxation time is relatively short compared to charging time. Make sure that the relaxation is sufficiently long!'''.format(median_tau,median_rlx))
+    #         elif settings['timing'].get():
+    #             messagebox.showinfo('Titration timings','''Titration duration
+    # Current applied for {:.2f} s
+    # Relaxing for {:.2f} s'''.format(median_tau,median_rlx))
+            return result
+    
+        taus = list(zip(*GITT_refined))[4]
+        relaxes = list(zip(*GITT_refined))[9]
+        n_titrations = len(taus)
+        evaluate_tau(taus,relaxes)
+        
+        print(p_val['scale'][0],p_val['limiter'][0],n_titrations_before,n_titrations)
+        
+        if n_titrations_before == 0:
+            n_titrations_before = n_titrations
+        else:
+            if n_titrations_before == n_titrations and optimize_scale:
+                optimize_scale = False
+                p_val['scale'][0] = p_val['scale'][0]*1.5
+            elif n_titrations_before == n_titrations and optimize_limiter:
+                optimize_limiter = False
+                p_val['limiter'][0] = p_val['limiter'][0]*1.5
+        
+        n_titrations_before = n_titrations
+        if optimize_scale:
+            p_val['scale'][0] = p_val['scale'][0]/1.5
+        elif optimize_limiter:
+            p_val['limiter'][0] = p_val['limiter'][0]/1.5
+        
+        # if bad_fit > 0:
+        #     messagebox.showinfo('Check Results','The regression for determining the onset energy yielded a bad fit {} times. Please check the results for errors and outliers.'.format(bad_fit))
+        if optimize_limiter == False and optimize_scale == False:
+            break
+        
+    print(p_val['scale'][0],p_val['limiter'][0])
     return D_out, GITT_refined
 
 # GUI
@@ -748,7 +836,7 @@ class plot_window:
         ax2 = ax.twinx()
         
 
-        ax2.scatter(self.D['time'],[x[0] for x in self.D['diff']],color=color,marker='+',label='D')
+        ax2.scatter(self.D['time'],[x[0] for x in self.D['diff']],color='red',marker='+',label='D') # change back color
         ax2.errorbar(self.D['time'],[x[0] for x in self.D['diff']],xerr=0,yerr=[x[1] for x in self.D['diff']],ecolor=color,fmt='none')
         
         h1, l1 = ax.get_legend_handles_labels()
@@ -929,13 +1017,13 @@ class main_window:
             self.frame_entry_fields, 
             pos = 9, 
             label = ['scale',''], 
-            init_value = 1)
+            init_value = -1)
         
         self.settings['limiter'] = labeled_entry(
             self.frame_entry_fields, 
             pos = 10, 
             label = ['limiter',''], 
-            init_value = 0.01)
+            init_value = -1)
         
         self.frame_checkbts = tk.Frame(self.frame_entry_fields)
         self.frame_checkbts.grid(row=11,column=0,sticky='N')
@@ -954,6 +1042,14 @@ class main_window:
                 onvalue = True, 
                 offvalue = False)
         _checkbt_plot.grid(row=0,column=1,sticky='W')
+        
+        self.settings['new_method'] = tk.BooleanVar()
+        _checkbt_plot = tk.Checkbutton(self.frame_checkbts, text = "Use relaxation method", 
+                variable = self.settings['new_method'], 
+                onvalue = True, 
+                offvalue = False)
+        _checkbt_plot.select()
+        _checkbt_plot.grid(row=0,column=2,sticky='W')
         
     '''
     This frame handles all relevant buttons.
